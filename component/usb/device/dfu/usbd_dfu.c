@@ -156,7 +156,10 @@ static int usbd_dfu_set_config(usb_dev_t *dev, u8 config)
 {
 	usbd_dfu_dev_t *dfu = &usbd_dfu_dev;
 
-	UNUSED(config);
+	/* Only the bConfigurationValue advertised in the config descriptor is valid */
+	if (config != 1U) {
+		return HAL_ERR_PARA;
+	}
 
 	dfu->dev = dev;
 
@@ -808,12 +811,12 @@ static u16 usbd_dfu_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf
 
 	case USB_DESC_TYPE_DEVICE:
 		len = sizeof(usbd_dfu_dev_desc);
-		usb_os_memcpy((void *)buf, (void *)usbd_dfu_dev_desc, len);
+		usb_os_memcpy((void *)buf, (const void *)usbd_dfu_dev_desc, len);
 		break;
 
 	case USB_DESC_TYPE_CONFIGURATION:
 		len = sizeof(usbd_dfu_config_desc);
-		usb_os_memcpy((void *)buf, (void *)usbd_dfu_config_desc, len);
+		usb_os_memcpy((void *)buf, (const void *)usbd_dfu_config_desc, len);
 
 		if (!dfu->from_composite) {
 			buf[USB_CFG_DESC_OFFSET_ATTR] = attr;
@@ -830,13 +833,13 @@ static u16 usbd_dfu_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf
 #ifndef CONFIG_USB_FS
 	case USB_DESC_TYPE_DEVICE_QUALIFIER:
 		len = sizeof(usbd_dfu_device_qualifier_desc);
-		usb_os_memcpy((void *)buf, (void *)usbd_dfu_device_qualifier_desc, len);
+		usb_os_memcpy((void *)buf, (const void *)usbd_dfu_device_qualifier_desc, len);
 		break;
 
 	case USB_DESC_TYPE_OTHER_SPEED_CONFIGURATION:
 		/* DFU has no endpoints, so the other-speed config is identical */
 		len = sizeof(usbd_dfu_config_desc);
-		usb_os_memcpy((void *)buf, (void *)usbd_dfu_config_desc, len);
+		usb_os_memcpy((void *)buf, (const void *)usbd_dfu_config_desc, len);
 
 		if (!dfu->from_composite) {
 			buf[USB_CFG_DESC_OFFSET_ATTR] = attr;
@@ -853,7 +856,7 @@ static u16 usbd_dfu_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf
 		switch (USB_LOW_BYTE(req->wValue)) {
 		case USBD_IDX_LANGID_STR:
 			len = sizeof(usbd_dfu_lang_id_desc);
-			usb_os_memcpy((void *)buf, (void *)usbd_dfu_lang_id_desc, len);
+			usb_os_memcpy((void *)buf, (const void *)usbd_dfu_lang_id_desc, len);
 			break;
 		case USBD_IDX_MFC_STR:
 			len = usbd_get_str_desc(USBD_DFU_MFR_STRING, buf);
@@ -985,7 +988,7 @@ static int usbd_dfu_private_init(usbd_dfu_cb_t *cb)
 	 * init the struct is zero-initialised (BSS), so saved_mode is 0 which is
 	 * neither RUNTIME nor DFU — default to RUNTIME below. */
 	u8 saved_mode = dfu->mode;
-	usb_os_memset(dfu, 0, sizeof(usbd_dfu_dev_t));
+	usb_os_memset((void *)dfu, 0, sizeof(usbd_dfu_dev_t));
 
 	dfu->xfer_buf = (u8 *)usb_os_malloc(USBD_DFU_XFER_SIZE);
 	if (dfu->xfer_buf == NULL) {
@@ -994,7 +997,7 @@ static int usbd_dfu_private_init(usbd_dfu_cb_t *cb)
 	}
 	if (!USB_IS_MEM_DMA_ALIGNED(dfu->xfer_buf)) {
 		RTK_LOGS(TAG, RTK_LOG_ERROR, "xfer_buf not DMA-aligned\n");
-		usb_os_mfree(dfu->xfer_buf);
+		usb_os_mfree((void *)dfu->xfer_buf);
 		dfu->xfer_buf = NULL;
 		return HAL_ERR_MEM;
 	}
@@ -1002,7 +1005,7 @@ static int usbd_dfu_private_init(usbd_dfu_cb_t *cb)
 	dfu->cb = cb;
 	if (cb->write == NULL) {
 		RTK_LOGS(TAG, RTK_LOG_ERROR, "write cb required (CAN_DNLOAD=1)\n");
-		usb_os_mfree(dfu->xfer_buf);
+		usb_os_mfree((void *)dfu->xfer_buf);
 		dfu->xfer_buf = NULL;
 		return HAL_ERR_PARA;
 	}
@@ -1010,7 +1013,7 @@ static int usbd_dfu_private_init(usbd_dfu_cb_t *cb)
 #if USBD_DFU_CAN_UPLOAD
 	if (cb->read == NULL) {
 		RTK_LOGS(TAG, RTK_LOG_ERROR, "read cb required (CAN_UPLOAD=1)\n");
-		usb_os_mfree(dfu->xfer_buf);
+		usb_os_mfree((void *)dfu->xfer_buf);
 		dfu->xfer_buf = NULL;
 		return HAL_ERR_PARA;
 	}
@@ -1023,7 +1026,7 @@ static int usbd_dfu_private_init(usbd_dfu_cb_t *cb)
 		ret = cb->init();
 		if (ret != HAL_OK) {
 			RTK_LOGS(TAG, RTK_LOG_ERROR, "CB init fail: %d\n", ret);
-			usb_os_mfree(dfu->xfer_buf);
+			usb_os_mfree((void *)dfu->xfer_buf);
 			dfu->xfer_buf = NULL;
 			return ret;
 		}
@@ -1035,7 +1038,7 @@ static int usbd_dfu_private_init(usbd_dfu_cb_t *cb)
 		if (cb->deinit != NULL) {
 			cb->deinit();
 		}
-		usb_os_mfree(dfu->xfer_buf);
+		usb_os_mfree((void *)dfu->xfer_buf);
 		dfu->xfer_buf = NULL;
 		return HAL_ERR_MEM;
 	}
@@ -1049,7 +1052,7 @@ static int usbd_dfu_private_init(usbd_dfu_cb_t *cb)
 		if (cb->deinit != NULL) {
 			cb->deinit();
 		}
-		usb_os_mfree(dfu->xfer_buf);
+		usb_os_mfree((void *)dfu->xfer_buf);
 		dfu->xfer_buf = NULL;
 		return HAL_ERR_MEM;
 	}
@@ -1121,7 +1124,7 @@ reconf_fail:
 	if (cb->deinit != NULL) {
 		cb->deinit();
 	}
-	usb_os_mfree(dfu->xfer_buf);
+	usb_os_mfree((void *)dfu->xfer_buf);
 	dfu->xfer_buf = NULL;
 	return HAL_ERR_MEM;
 }
@@ -1251,7 +1254,7 @@ int usbd_dfu_deinit(void)
 				dfu->dev->ep0_out.xfer_buf = dfu->ep0_default_buf;
 			}
 		}
-		usb_os_mfree(dfu->xfer_buf);
+		usb_os_mfree((void *)dfu->xfer_buf);
 		dfu->xfer_buf = NULL;
 	}
 

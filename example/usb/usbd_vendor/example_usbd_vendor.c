@@ -14,7 +14,7 @@
 /* Private defines -----------------------------------------------------------*/
 
 // Endpoint address
-#if defined (CONFIG_AMEBAGREEN2)
+#if defined(CONFIG_AMEBAGREEN2) || defined(CONFIG_RLE1509)
 #define VENDOR_BULK_IN_EP                         0x86U
 #define VENDOR_BULK_OUT_EP                        0x03U
 #define VENDOR_ISOC_IN_EP                         0x82U
@@ -94,7 +94,7 @@ static const usbd_config_t vendor_cfg = {
 #if defined(CONFIG_AMEBASMART) || defined(CONFIG_AMEBAD) || defined(CONFIG_AMEBADPLUS)
 	.nptx_max_epmis_cnt = 100U,
 	.intr_use_ptx_fifo = 0U,
-#elif defined (CONFIG_AMEBAGREEN2)
+#elif defined(CONFIG_AMEBAGREEN2) || defined(CONFIG_RLE1509)
 	/*DFIFO total 1024 DWORD, resv 12 DWORD for DMA addr and EP0 fixed 32 DWORD*/
 	.rx_fifo_depth = 292U,
 	.ptx_fifo_depth = {16U, 256U, 32U, 256U, 128U, },

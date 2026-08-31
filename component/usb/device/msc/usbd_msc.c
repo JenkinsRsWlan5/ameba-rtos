@@ -212,10 +212,8 @@ static int RAM_init(void)
 
 static int RAM_deinit(void)
 {
-	if (usbd_msc_ram_disk_buf != NULL) {
-		usb_os_mfree((void *)usbd_msc_ram_disk_buf);
-		usbd_msc_ram_disk_buf = NULL;
-	}
+	usb_os_mfree((void *)usbd_msc_ram_disk_buf);
+	usbd_msc_ram_disk_buf = NULL;
 
 	return HAL_OK;
 }
@@ -230,7 +228,7 @@ static int RAM_ReadBlocks(u32 sector, u8 *data, u32 count)
 {
 	int result = HAL_ERR_PARA;
 	if (sector + count <= USBD_MSC_RAM_DISK_SECTORS) {
-		usb_os_memcpy((void *)data, (void *)(usbd_msc_ram_disk_buf + sector * USBD_MSC_BLK_SIZE), count * USBD_MSC_BLK_SIZE);
+		usb_os_memcpy((void *)data, (const void *)(usbd_msc_ram_disk_buf + sector * USBD_MSC_BLK_SIZE), count * USBD_MSC_BLK_SIZE);
 		result = HAL_OK;
 	}
 	return result;
@@ -240,7 +238,7 @@ static int RAM_WriteBlocks(u32 sector, const u8 *data, u32 count)
 {
 	int result = HAL_ERR_PARA;
 	if (sector + count <= USBD_MSC_RAM_DISK_SECTORS) {
-		usb_os_memcpy((void *)(usbd_msc_ram_disk_buf + sector * USBD_MSC_BLK_SIZE), (void *)data, count * USBD_MSC_BLK_SIZE);
+		usb_os_memcpy((void *)(usbd_msc_ram_disk_buf + sector * USBD_MSC_BLK_SIZE), (const void *)data, count * USBD_MSC_BLK_SIZE);
 		result = HAL_OK;
 	}
 	return result;
@@ -347,7 +345,11 @@ static int usbd_msc_set_config(usb_dev_t *dev, u8 config)
 	usbd_ep_t *ep_bulk_in = &cdev->ep_bulk_in;
 	usbd_ep_t *ep_bulk_out = &cdev->ep_bulk_out;
 	usb_ep_info_t *info;
-	UNUSED(config);
+
+	/* Only the bConfigurationValue advertised in the config descriptor is valid */
+	if (config != 1U) {
+		return HAL_ERR_PARA;
+	}
 
 	cdev->dev = dev;
 
@@ -773,7 +775,7 @@ static u16 usbd_msc_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf
 
 	case USB_DESC_TYPE_DEVICE:
 		len = sizeof(usbd_msc_dev_desc);
-		usb_os_memcpy((void *)buf, (void *)usbd_msc_dev_desc, len);
+		usb_os_memcpy((void *)buf, (const void *)usbd_msc_dev_desc, len);
 		break;
 
 	case USB_DESC_TYPE_CONFIGURATION:
@@ -787,7 +789,7 @@ static u16 usbd_msc_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf
 			desc = (u8 *)usbd_msc_fs_config_desc;
 			len = sizeof(usbd_msc_fs_config_desc);
 		}
-		usb_os_memcpy((void *)buf, (void *)desc, len);
+		usb_os_memcpy((void *)buf, (const void *)desc, len);
 		if (!cdev->from_composite) {
 			buf[USB_CFG_DESC_OFFSET_ATTR] = attr;
 		}
@@ -802,7 +804,7 @@ static u16 usbd_msc_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf
 #ifndef CONFIG_USB_FS
 	case USB_DESC_TYPE_DEVICE_QUALIFIER:
 		len = sizeof(usbd_msc_device_qualifier_desc);
-		usb_os_memcpy((void *)buf, (void *)usbd_msc_device_qualifier_desc, len);
+		usb_os_memcpy((void *)buf, (const void *)usbd_msc_device_qualifier_desc, len);
 		break;
 
 	case USB_DESC_TYPE_OTHER_SPEED_CONFIGURATION:
@@ -813,7 +815,7 @@ static u16 usbd_msc_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf
 			desc = (u8 *)usbd_msc_hs_config_desc;
 			len = sizeof(usbd_msc_hs_config_desc);
 		}
-		usb_os_memcpy((void *)buf, (void *)desc, len);
+		usb_os_memcpy((void *)buf, (const void *)desc, len);
 		if (!cdev->from_composite) {
 			buf[USB_CFG_DESC_OFFSET_ATTR] = attr;
 		}
@@ -831,7 +833,7 @@ static u16 usbd_msc_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf
 		switch (USB_LOW_BYTE(req->wValue)) {
 		case USBD_IDX_LANGID_STR:
 			len = sizeof(usbd_msc_lang_id_desc);
-			usb_os_memcpy((void *)buf, (void *)usbd_msc_lang_id_desc, len);
+			usb_os_memcpy((void *)buf, (const void *)usbd_msc_lang_id_desc, len);
 			break;
 		case USBD_IDX_MFC_STR:
 			len = usbd_get_str_desc(USBD_MSC_MFG_STRING, buf);
@@ -1017,15 +1019,15 @@ create_tx_sema_fail:
 	rtos_sema_delete(cdev->rx_sema);
 
 create_rx_sema_fail:
-	usb_os_mfree(cdev->csw);
+	usb_os_mfree((void *)cdev->csw);
 	cdev->csw = NULL;
 
 csw_fail:
-	usb_os_mfree(cdev->cbw);
+	usb_os_mfree((void *)cdev->cbw);
 	cdev->cbw = NULL;
 
 cbw_fail:
-	usb_os_mfree(cdev->data);
+	usb_os_mfree((void *)cdev->data);
 	cdev->data = NULL;
 
 data_buf_fail:
@@ -1113,20 +1115,14 @@ void usbd_msc_deinit(void)
 		usbd_unregister_class();
 	}
 
-	if (cdev->csw != NULL) {
-		usb_os_mfree(cdev->csw);
-		cdev->csw = NULL;
-	}
+	usb_os_mfree((void *)cdev->csw);
+	cdev->csw = NULL;
 
-	if (cdev->cbw != NULL) {
-		usb_os_mfree(cdev->cbw);
-		cdev->cbw = NULL;
-	}
+	usb_os_mfree((void *)cdev->cbw);
+	cdev->cbw = NULL;
 
-	if (cdev->data != NULL) {
-		usb_os_mfree(cdev->data);
-		cdev->data = NULL;
-	}
+	usb_os_mfree((void *)cdev->data);
+	cdev->data = NULL;
 
 	if (usbd_msc_sd_lock != NULL) {
 		usb_os_lock_delete(usbd_msc_sd_lock);

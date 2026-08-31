@@ -427,7 +427,7 @@ static void usbd_ecm_set_mac(const u8 *mac)
 		return;
 	}
 
-	memcpy((void *) & (ecm->mac[0]), (const void *)mac, USBD_CDC_ECM_MAC_STR_LEN);
+	usb_os_memcpy((void *) & (ecm->mac[0]), (const void *)mac, USBD_CDC_ECM_MAC_STR_LEN);
 
 	ecm->mac_valid = 1;
 }
@@ -581,7 +581,7 @@ static int usbd_ecm_intr_in_send(void *data, u16 len)
 		ep_intr_in->xfer_state = 1U;
 
 		if (dev->is_ready) {
-			usb_os_memcpy((void *)ep_intr_in->xfer_buf, (void *)data, len);
+			usb_os_memcpy((void *)ep_intr_in->xfer_buf, (const void *)data, len);
 			ep_intr_in->xfer_len = len;
 			usbd_ep_transmit(dev, ep_intr_in);
 			ret = HAL_OK;
@@ -664,7 +664,11 @@ static int usbd_ecm_set_config(usb_dev_t *dev, u8 config)
 	usbd_ep_t *ep_bulk_out = &ecm->ep_bulk_out;
 	usbd_ep_t *ep_intr_in = &ecm->ep_intr_in;
 	usb_ep_info_t *info;
-	UNUSED(config);
+
+	/* Only the bConfigurationValue advertised in the config descriptor is valid */
+	if (config != 1U) {
+		return HAL_ERR_PARA;
+	}
 
 	ecm->dev = dev;
 
@@ -825,7 +829,7 @@ static int usbd_ecm_setup(usb_dev_t *dev, usb_setup_req_t *req)
 				}
 			} else {
 				/* Host-to-Device with data stage */
-				usb_os_memcpy((void *)&ecm->ctrl_req, (void *)req, sizeof(usb_setup_req_t));
+				usb_os_memcpy((void *)&ecm->ctrl_req, (const void *)req, sizeof(usb_setup_req_t));
 				ep0_out->xfer_len = req->wLength;
 				usbd_ep_receive(dev, ep0_out);
 			}
@@ -1121,7 +1125,7 @@ static u16 usbd_ecm_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf
 	switch (desc_type) {
 	case USB_DESC_TYPE_DEVICE:
 		len = sizeof(usbd_cdc_ecm_dev_desc);
-		usb_os_memcpy(buf, usbd_cdc_ecm_dev_desc, len);
+		usb_os_memcpy((void *)buf, (const void *)usbd_cdc_ecm_dev_desc, len);
 		break;
 
 	case USB_DESC_TYPE_CONFIGURATION:
@@ -1136,7 +1140,7 @@ static u16 usbd_ecm_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf
 			len = sizeof(usbd_cdc_ecm_fs_config_desc);
 		}
 
-		usb_os_memcpy((void *)buf, (void *)desc, len);
+		usb_os_memcpy((void *)buf, (const void *)desc, len);
 
 		if (!ecm->from_composite) {
 			buf[USB_CFG_DESC_OFFSET_ATTR] = attr;
@@ -1154,7 +1158,7 @@ static u16 usbd_ecm_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf
 #ifndef CONFIG_USB_FS
 	case USB_DESC_TYPE_DEVICE_QUALIFIER:
 		len = sizeof(usbd_cdc_ecm_device_qualifier_desc);
-		usb_os_memcpy((void *)buf, (void *)usbd_cdc_ecm_device_qualifier_desc, len);
+		usb_os_memcpy((void *)buf, (const void *)usbd_cdc_ecm_device_qualifier_desc, len);
 		break;
 
 	case USB_DESC_TYPE_OTHER_SPEED_CONFIGURATION:
@@ -1163,7 +1167,7 @@ static u16 usbd_ecm_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf
 		len = (speed == USB_SPEED_HIGH) ?
 			  sizeof(usbd_cdc_ecm_fs_config_desc) : sizeof(usbd_cdc_ecm_hs_config_desc);
 
-		usb_os_memcpy(buf, desc, len);
+		usb_os_memcpy((void *)buf, (const void *)desc, len);
 
 		if (!ecm->from_composite) {
 			buf[USB_CFG_DESC_OFFSET_ATTR] = attr;
@@ -1184,7 +1188,7 @@ static u16 usbd_ecm_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf
 		switch (desc_idx) {
 		case USBD_IDX_LANGID_STR:
 			len = sizeof(usbd_cdc_ecm_lang_id_desc);
-			usb_os_memcpy(buf, usbd_cdc_ecm_lang_id_desc, len);
+			usb_os_memcpy((void *)buf, (const void *)usbd_cdc_ecm_lang_id_desc, len);
 			break;
 		case USBD_IDX_MFC_STR:
 			len = usbd_get_str_desc(USBD_CDC_ECM_MFG_STRING, buf);
@@ -1277,7 +1281,7 @@ static void usbd_ecm_trace_thread(void *param)
 					 dev->is_ready, ecm->connect_status,
 					 ecm->notify_state, ecm->notify_retry, ecm->alt_setting,
 					 ep_bulk_in->xfer_state, ep_bulk_out->xfer_state, ep_intr_in->xfer_state,
-					 ecm->rx_buf_free, (u32)ecm->rx_pending_len, ecm->rx_xfer_idx,
+					 ecm->rx_buf_free, ecm->rx_pending_len, ecm->rx_xfer_idx,
 					 usb_ringbuf_get_count(&ecm->bulk_tx_rb));
 			/* Line 2 - monotonic per-path counters; a value frozen across intervals
 			 * pinpoints a wedged path:
@@ -1359,7 +1363,7 @@ static int usbd_cdc_ecm_private_init(const usbd_cdc_ecm_cb_t *cb, const usbd_cdc
 		return HAL_ERR_PARA;
 	}
 
-	memset((void *)ecm, 0, sizeof(usbd_cdc_ecm_dev_t));
+	usb_os_memset((void *)ecm, 0, sizeof(usbd_cdc_ecm_dev_t));
 
 	ecm->ctrl_req.bRequest = 0xFFU;
 
@@ -1473,7 +1477,7 @@ static int usbd_cdc_ecm_private_init(const usbd_cdc_ecm_cb_t *cb, const usbd_cdc
 	return HAL_OK;
 
 cleanup_intr_in:
-	usb_os_mfree(ep_intr_in->xfer_buf);
+	usb_os_mfree((void *)ep_intr_in->xfer_buf);
 	ep_intr_in->xfer_buf = NULL;
 
 cleanup_rx_thread:
@@ -1493,19 +1497,17 @@ cleanup_tx_slot_sema:
 	ecm->bulk_tx_slot_sema = NULL;
 
 cleanup_rx_buf1:
-	usb_os_mfree(ecm->rx_buf[1]);
+	usb_os_mfree((void *)ecm->rx_buf[1]);
 	ecm->rx_buf[1] = NULL;
 
 cleanup_rx_buf0:
-	usb_os_mfree(ecm->rx_buf[0]);
+	usb_os_mfree((void *)ecm->rx_buf[0]);
 	ecm->rx_buf[0] = NULL;
 	ep_bulk_out->xfer_buf = NULL;
 
 exit:
-	if (ecm->bulk_tx_dma_buf != NULL) {
-		usb_os_mfree(ecm->bulk_tx_dma_buf);
-		ecm->bulk_tx_dma_buf = NULL;
-	}
+	usb_os_mfree((void *)ecm->bulk_tx_dma_buf);
+	ecm->bulk_tx_dma_buf = NULL;
 	usb_ringbuf_manager_deinit(&ecm->bulk_tx_rb);
 
 	return ret;
@@ -1583,10 +1585,8 @@ int usbd_cdc_ecm_deinit(void)
 	/* After unregister, no more USB ISRs will fire.  Free the TX ring buffer
 	 * and the private BULK IN DMA buffer. */
 	usb_ringbuf_manager_deinit(&ecm->bulk_tx_rb);
-	if (ecm->bulk_tx_dma_buf != NULL) {
-		usb_os_mfree(ecm->bulk_tx_dma_buf);
-		ecm->bulk_tx_dma_buf = NULL;
-	}
+	usb_os_mfree((void *)ecm->bulk_tx_dma_buf);
+	ecm->bulk_tx_dma_buf = NULL;
 
 	/* Stop the RX delivery thread and wait for it to exit. */
 	ecm->rx_thread_running = 0;
@@ -1615,17 +1615,13 @@ int usbd_cdc_ecm_deinit(void)
 	}
 
 	/* Free buffers */
-	if (ep_intr_in->xfer_buf != NULL) {
-		usb_os_mfree(ep_intr_in->xfer_buf);
-		ep_intr_in->xfer_buf = NULL;
-	}
+	usb_os_mfree((void *)ep_intr_in->xfer_buf);
+	ep_intr_in->xfer_buf = NULL;
 
 	/* Free RX ping-pong buffers. */
 	for (i = 0; i < USBD_CDC_ECM_RX_BUF_NUM; i++) {
-		if (ecm->rx_buf[i] != NULL) {
-			usb_os_mfree(ecm->rx_buf[i]);
-			ecm->rx_buf[i] = NULL;
-		}
+		usb_os_mfree((void *)ecm->rx_buf[i]);
+		ecm->rx_buf[i] = NULL;
 	}
 	ep_bulk_out->xfer_buf = NULL;
 

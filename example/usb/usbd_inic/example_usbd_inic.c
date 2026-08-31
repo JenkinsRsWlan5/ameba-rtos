@@ -69,7 +69,7 @@ static const char *const TAG = "INIC";
 static const usbd_config_t inic_cfg = {
 	.speed = INIC_USB_SPEED,
 	.isr_priority = INT_PRI_MIDDLE,
-#if defined (CONFIG_AMEBAGREEN2)
+#if defined(CONFIG_AMEBAGREEN2) || defined(CONFIG_RLE1509)
 	.rx_fifo_depth = 292U,
 	.ptx_fifo_depth = {16U, 256U, 32U, 256U, 128U, },
 #endif
@@ -104,28 +104,20 @@ static void inic_wifi_deinit(void)
 	usbd_inic_app_ep_t *ep;
 
 	ep = &iapp->in_ep[USB_EP_NUM(USBD_WHC_WIFI_EP4_BULK_IN)];
-	if (ep->buf != NULL) {
-		usb_os_mfree(ep->buf);
-		ep->buf = NULL;
-	}
+	usb_os_mfree(ep->buf);
+	ep->buf = NULL;
 
 	ep = &iapp->out_ep[USB_EP_NUM(USBD_WHC_WIFI_EP5_BULK_OUT)];
-	if (ep->buf != NULL) {
-		usb_os_mfree(ep->buf);
-		ep->buf = NULL;
-	}
+	usb_os_mfree(ep->buf);
+	ep->buf = NULL;
 
 	ep = &iapp->out_ep[USB_EP_NUM(USBD_WHC_WIFI_EP6_BULK_OUT)];
-	if (ep->buf != NULL) {
-		usb_os_mfree(ep->buf);
-		ep->buf = NULL;
-	}
+	usb_os_mfree(ep->buf);
+	ep->buf = NULL;
 
 	ep = &iapp->out_ep[USB_EP_NUM(USBD_WHC_WIFI_EP7_BULK_OUT)];
-	if (ep->buf != NULL) {
-		usb_os_mfree(ep->buf);
-		ep->buf = NULL;
-	}
+	usb_os_mfree(ep->buf);
+	ep->buf = NULL;
 }
 
 static void inic_bt_deinit(void)
@@ -134,22 +126,16 @@ static void inic_bt_deinit(void)
 	usbd_inic_app_ep_t *ep;
 
 	ep = &iapp->in_ep[USB_EP_NUM(USBD_INIC_BT_EP1_INTR_IN)];
-	if (ep->buf != NULL) {
-		usb_os_mfree(ep->buf);
-		ep->buf = NULL;
-	}
+	usb_os_mfree(ep->buf);
+	ep->buf = NULL;
 
 	ep = &iapp->in_ep[USB_EP_NUM(USBD_INIC_BT_EP2_BULK_IN)];
-	if (ep->buf != NULL) {
-		usb_os_mfree(ep->buf);
-		ep->buf = NULL;
-	}
+	usb_os_mfree(ep->buf);
+	ep->buf = NULL;
 
 	ep = &iapp->out_ep[USB_EP_NUM(USBD_INIC_BT_EP2_BULK_OUT)];
-	if (ep->buf != NULL) {
-		usb_os_mfree(ep->buf);
-		ep->buf = NULL;
-	}
+	usb_os_mfree(ep->buf);
+	ep->buf = NULL;
 }
 
 /**
@@ -390,7 +376,7 @@ static int inic_cb_received(usbd_inic_ep_t *out_ep, u32 len)
 		// Loopback with EP2
 		ep_num = USB_EP_NUM(USBD_INIC_BT_EP2_BULK_IN);
 		ep_in = &iapp->in_ep[ep_num];
-		usb_os_memcpy((void *)ep_in->buf, (void *)ep->xfer_buf, len);
+		usb_os_memcpy((void *)ep_in->buf, (const void *)ep->xfer_buf, len);
 		ep_in->buf_len = len;
 
 		rtos_sema_give(inic_bt_bulk_in_sema);
@@ -399,7 +385,7 @@ static int inic_cb_received(usbd_inic_ep_t *out_ep, u32 len)
 		// Loopback with EP4
 		ep_num = USB_EP_NUM(USBD_WHC_WIFI_EP4_BULK_IN);
 		ep_in = &iapp->in_ep[ep_num];
-		usb_os_memcpy((void *)ep_in->buf, (void *)ep->xfer_buf, len);
+		usb_os_memcpy((void *)ep_in->buf, (const void *)ep->xfer_buf, len);
 		ep_in->buf_len = len;
 
 		rtos_sema_give(inic_wifi_bulk_in_sema);

@@ -174,3 +174,19 @@ void whc_host_recv_dispatch(u8 *buf, u32 len)
 
 	rtos_mem_free(buf);
 }
+
+#if !defined(CONFIG_WHC_WIFI_API_PATH)
+/* for case: dev with wpa, but tcpip in host only */
+void wifi_dhcp_success_indicate(void)
+{
+	return;
+}
+
+s32 wifi_ap_get_connected_clients(struct rtw_client_list *client_list_buffer)
+{
+	if (client_list_buffer) {
+		client_list_buffer->count = 0;
+	}
+	return RTK_SUCCESS;
+}
+#endif

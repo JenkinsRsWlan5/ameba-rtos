@@ -15,12 +15,16 @@ struct whc_sdio;
 
 #define CONFIG_SDIO_TX_ENABLE_AVAL_INT
 #define CONFIG_SDIO_TX_OVF_CTRL
+#define CALCULATE_FREE_TXBD
 //#define CONFIG_SDIO_RX_AGGREGATION //for Rx Aggregation
 //#define CONFIG_SDIO_TX_AGGREGATION
 
 //#define CONFIG_POWER_SAVING
 //#define CONFIG_PS_DYNAMIC_CHK
 //#define SDIO_HOST_FAKE_SLEEP
+
+/* for host active detect, for test only now */
+//#define CONFIG_WHC_ACTIVE_DETECT
 
 #define SIZE_RX_DESC	0
 #define SIZE_TX_DESC	(sizeof(INIC_TX_DESC))

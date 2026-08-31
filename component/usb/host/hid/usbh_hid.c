@@ -289,7 +289,7 @@ static void usbh_hid_process_main_item(usbh_hid_parse_state *state, const usbh_h
 
 	switch (item->tag) {
 	case USBH_HID_MAIN_ITEM_TAG_INPUT:
-		/* HID spec ¡ì6.2.2.8: Local items are consumed after each Main item.
+		/* HID spec ï¿½ï¿½6.2.2.8: Local items are consumed after each Main item.
 		 * Accumulate the bits used by this field into bit_offset so the next
 		 * field's usages get correct absolute bit positions, then reset the
 		 * per-field usage counter. */
@@ -348,7 +348,7 @@ static void usbh_hid_parse_hid_report_descriptor(const u8 *data, u16 length, usb
 #endif
 
 	state.device_info = device_info;
-	memset(device_info, 0, sizeof(usbh_hid_ctrl_caps_t));
+	usb_os_memset((void *)device_info, 0, sizeof(usbh_hid_ctrl_caps_t));
 
 	while ((ptr = usbh_hid_fetch_item(ptr, end, &item)) != NULL) {
 #if USBH_HID_REPORT_DESC_PARSE_DEBUG
@@ -574,17 +574,17 @@ static int usbh_hid_parse_details(usbh_itf_data_t *itf_data)
 			break;
 		case USBH_HID_DESC:
 			hid_desc = (usbh_dev_hid_desc_t *)desc;
-			usb_os_memcpy(&(hid->hid_desc), hid_desc, sizeof(usbh_dev_hid_desc_t));
+			usb_os_memcpy((void *) & (hid->hid_desc), (const void *)hid_desc, sizeof(usbh_dev_hid_desc_t));
 			break;
 
 		case USB_DESC_TYPE_ENDPOINT:
 			ep_desc = (usbh_ep_desc_t *)desc;
 			if (USB_EP_IS_IN(ep_desc->bEndpointAddress)) {
-				/* Interrupt IN ¡ª receives HID reports from device */
-				usb_os_memcpy(&(hid->ep_desc_in), ep_desc, sizeof(usbh_ep_desc_t));
+				/* Interrupt IN ï¿½ï¿½ receives HID reports from device */
+				usb_os_memcpy((void *) & (hid->ep_desc_in), (const void *)ep_desc, sizeof(usbh_ep_desc_t));
 			} else {
-				/* Interrupt OUT ¡ª sends output reports to device */
-				usb_os_memcpy(&(hid->ep_desc_out), ep_desc, sizeof(usbh_ep_desc_t));
+				/* Interrupt OUT ï¿½ï¿½ sends output reports to device */
+				usb_os_memcpy((void *) & (hid->ep_desc_out), (const void *)ep_desc, sizeof(usbh_ep_desc_t));
 			}
 			break;
 
@@ -760,12 +760,21 @@ static int usbh_hid_attach(usb_host_t *host)
 		hid->report_desc_status = (hid->alt_setting_count > 1) ? USBH_HID_REPORT_SET_ALT
 								  : USBH_HID_REPORT_GET_DESC;
 
-		usbh_open_pipe(host, pipe, &(hid->ep_desc_in), &usbh_hid_driver);
+		if (usbh_open_pipe(host, pipe, &(hid->ep_desc_in), &usbh_hid_driver) != HAL_OK) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "Open intr in pipe fail\n");
+			return HAL_ERR_PARA;
+		}
 	}
 
 	/* Open the Interrupt OUT pipe if the interface exposes one. */
 	if (hid->ep_desc_out.bEndpointAddress) {
-		usbh_open_pipe(host, &(hid->pipe_out), &(hid->ep_desc_out), &usbh_hid_driver);
+		if (usbh_open_pipe(host, &(hid->pipe_out), &(hid->ep_desc_out), &usbh_hid_driver) != HAL_OK) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "Open intr out pipe fail\n");
+			if (hid->pipe_in.pipe_num) {
+				usbh_close_pipe(host, &(hid->pipe_in));
+			}
+			return HAL_ERR_PARA;
+		}
 	}
 
 	if ((hid->cb != NULL) && (hid->cb->attach != NULL)) {
@@ -872,9 +881,6 @@ static void usbh_hid_msg_parse_thread(void *param)
 	u8 report_msg[10];
 	u8 read_cnt;
 
-	hid->parse_task_alive = 1;
-	hid->parse_task_exit = 0;
-
 	while (hid->parse_task_exit == 0) {
 		read_cnt = usb_ringbuf_remove_head(handle, report_msg, 10, NULL);
 		if (read_cnt) {
@@ -907,7 +913,7 @@ int usbh_hid_init(const usbh_hid_usr_cb_t *cb)
 		return HAL_ERR_PARA;
 	}
 
-	usb_os_memset(hid, 0x00, sizeof(usbh_hid_t));
+	usb_os_memset((void *)hid, 0x00, sizeof(usbh_hid_t));
 
 	hid->hid_ctrl_buf = (u8 *)usb_os_malloc(USBH_HID_CTRL_BUF_LEN);
 	if (NULL == hid->hid_ctrl_buf) {
@@ -918,7 +924,7 @@ int usbh_hid_init(const usbh_hid_usr_cb_t *cb)
 		ret = cb->init();
 		if (ret != HAL_OK) {
 			RTK_LOGS(TAG, RTK_LOG_ERROR, "CB init fail\n");
-			usb_os_mfree(hid->hid_ctrl_buf);
+			usb_os_mfree((void *)hid->hid_ctrl_buf);
 			hid->hid_ctrl_buf = NULL;
 			return ret;
 		}
@@ -927,16 +933,25 @@ int usbh_hid_init(const usbh_hid_usr_cb_t *cb)
 	ret = usb_ringbuf_manager_init(&(hid->report_msg), USBH_HID_MST_COUNT, USBH_HID_MSG_LENGTH, 0);
 	if (ret != HAL_OK) {
 		RTK_LOGS(TAG, RTK_LOG_ERROR, "Ringbuffer init fail\n");
-		usb_os_mfree(hid->hid_ctrl_buf);
+		usb_os_mfree((void *)hid->hid_ctrl_buf);
 		hid->hid_ctrl_buf = NULL;
 		return ret;
 	}
 
+	/* Set before task creation, not inside the thread body: rtos_task_create()
+	   may not run the new task immediately, so if the caller requested an exit
+	   below before the thread got a chance to run, the thread's own startup
+	   code would otherwise clobber that request back to "keep running" and
+	   loop forever, hanging the wait loop below. */
+	hid->parse_task_alive = 1;
+	hid->parse_task_exit = 0;
+
 	if (rtos_task_create(&(hid->msg_parse_task), ((const char *)"usbh_hid_msg_parse_thread"), usbh_hid_msg_parse_thread,
 						 NULL, USBH_HID_THREAD_STACK_SIZE, USBH_HID_THREAD_PRIORITY) != RTK_SUCCESS) {
 		RTK_LOGS(TAG, RTK_LOG_ERROR, "Create parse thread fail\n");
+		hid->parse_task_alive = 0;
 		usb_ringbuf_manager_deinit(&(hid->report_msg));
-		usb_os_mfree(hid->hid_ctrl_buf);
+		usb_os_mfree((void *)hid->hid_ctrl_buf);
 		hid->hid_ctrl_buf = NULL;
 		return HAL_ERR_UNKNOWN;
 	}
@@ -951,7 +966,7 @@ int usbh_hid_init(const usbh_hid_usr_cb_t *cb)
 			rtos_time_delay_ms(1);
 		} while (hid->parse_task_alive);
 		usb_ringbuf_manager_deinit(&(hid->report_msg));
-		usb_os_mfree(hid->hid_ctrl_buf);
+		usb_os_mfree((void *)hid->hid_ctrl_buf);
 		hid->hid_ctrl_buf = NULL;
 		hid->cb = NULL;
 		return ret;
@@ -989,10 +1004,8 @@ int usbh_hid_deinit(void)
 		usbh_close_pipe(hid->host, &(hid->pipe_out));
 	}
 
-	if (hid->hid_ctrl_buf != NULL) {
-		usb_os_mfree(hid->hid_ctrl_buf);
-		hid->hid_ctrl_buf = NULL;
-	}
+	usb_os_mfree((void *)hid->hid_ctrl_buf);
+	hid->hid_ctrl_buf = NULL;
 
 	usb_ringbuf_manager_deinit(&(hid->report_msg));
 

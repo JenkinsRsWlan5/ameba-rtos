@@ -8,6 +8,7 @@
 
 #include "usbd_composite.h"
 #include "usb_cdc.h"
+#include "usb_uac.h"
 #include <os_wrapper.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -153,6 +154,8 @@ static void usbd_composite_patch_if_numbers(u8 *desc, u16 len, u8 offset)
 	u16 i;
 	u8 dlen;
 	u8 dtype;
+	u8 cur_if_class = 0;      /* bInterfaceClass of the Standard Interface currently in scope */
+	u8 cur_if_subclass = 0;   /* bInterfaceSubClass — needed to disambiguate CS_INTERFACE subtypes */
 
 	for (i = 0; i < len;) {
 		dlen = desc[i];
@@ -165,18 +168,43 @@ static void usbd_composite_patch_if_numbers(u8 *desc, u16 len, u8 offset)
 		case USB_DESC_TYPE_INTERFACE:
 			desc[i + 2] += offset;         /* bInterfaceNumber */
 			/* bAlternateSetting (i+3) must NOT be patched */
+			cur_if_class = desc[i + 5];    /* bInterfaceClass */
+			cur_if_subclass = desc[i + 6]; /* bInterfaceSubClass */
 			break;
 		case USB_DESC_TYPE_IAD:
 			desc[i + 2] += offset;         /* bFirstInterface */
 			break;
 		case USB_DESC_TYPE_CS_INTERFACE:
-			if ((dlen >= 5) && ((desc[i + 2] == USB_CDC_FUNC_DESC_CALL_MGMT) || (desc[i + 2] == USB_CDC_FUNC_DESC_UNION))) {
-				/* Call Management FD: bDataInterface at offset 4 */
-				desc[i + 4] += offset;
-			}
-			if ((dlen >= 4) && (desc[i + 2] == USB_CDC_FUNC_DESC_UNION)) {
-				/* Union FD: bMasterInterface at offset 3, bSlaveInterface0 at offset 4+ */
-				desc[i + 3] += offset;     /* bMasterInterface */
+			/* CS_INTERFACE descriptors reuse the same functional subtype values across
+			 * classes for unrelated fields, so gate on the enclosing interface class (and
+			 * subclass) before patching — e.g. UAC AC Header subtype (0x01) collides with CDC
+			 * Call Management, UAC Feature Unit (0x06) with CDC Union, and UAC AS_GENERAL
+			 * (0x01) with the AC Header. */
+			if (cur_if_class == USB_CDC_COMM_INTERFACE_CLASS_CODE) {
+				if ((dlen >= 5) && ((desc[i + 2] == USB_CDC_FUNC_DESC_CALL_MGMT) || (desc[i + 2] == USB_CDC_FUNC_DESC_UNION))) {
+					/* Call Management FD: bDataInterface at offset 4 */
+					desc[i + 4] += offset;
+				}
+				if ((dlen >= 4) && (desc[i + 2] == USB_CDC_FUNC_DESC_UNION)) {
+					/* Union FD: bMasterInterface at offset 3, bSlaveInterface0 at offset 4+ */
+					desc[i + 3] += offset;     /* bMasterInterface */
+				}
+			} else if ((cur_if_class == USB_UAC_IF_CLASS_AUDIO) &&
+					   (cur_if_subclass == USB_UAC_SUBCLASS_AUDIOCONTROL) &&
+					   (desc[i + 2] == USB_UAC_AC_HEADER) &&
+					   (desc[i + 4] == 0x01U) &&      /* bcdADC major 1 -> UAC1 only (excludes UAC2 0x02xx) */
+					   (dlen >= 8)) {
+				/* UAC1 Class-Specific AC Header: baInterfaceNr[1..bInCollection] name the
+				 * AudioStreaming interface(s) governed by this AudioControl interface — rebase
+				 * each into the composite so the cross-reference stays valid. */
+				u8 in_coll = desc[i + 7];      /* bInCollection */
+				u8 j;
+				if ((u16)(8 + in_coll) > dlen) {   /* guard against malformed bInCollection */
+					in_coll = (u8)(dlen - 8);
+				}
+				for (j = 0; j < in_coll; j++) {
+					desc[i + 8 + j] += offset; /* baInterfaceNr[j] */
+				}
 			}
 			break;
 		default:
@@ -251,7 +279,7 @@ static u16 usbd_composite_append_func_desc(usb_dev_t *dev, usb_setup_req_t *req,
 		return 0;
 	}
 
-	memcpy(dest + dest_off, src, src_len);
+	usb_os_memcpy((void *)(dest + dest_off), (const void *)src, src_len);
 	return src_len;
 }
 
@@ -285,7 +313,7 @@ static u16 usbd_composite_build_config_desc(usb_dev_t *dev, usb_setup_req_t *req
 	u8 attr;
 	u8 i;
 
-	memcpy(buf, usbd_composite_config_desc, USB_LEN_CFG_DESC);
+	usb_os_memcpy((void *)buf, (const void *)usbd_composite_config_desc, USB_LEN_CFG_DESC);
 
 	/* Patch bDescriptorType (byte 1) for Other Speed Config */
 	if (USB_HIGH_BYTE(req->wValue) == USB_DESC_TYPE_OTHER_SPEED_CONFIGURATION) {
@@ -347,7 +375,7 @@ static u16 usbd_composite_build_config_desc(usb_dev_t *dev, usb_setup_req_t *req
 static u16 usbd_composite_get_string_desc(u8 str_idx, u8 *buf)
 {
 	if (str_idx == 0) {
-		memcpy(buf, usbd_composite_langid_desc, USB_LEN_LANGID_STR_DESC);
+		usb_os_memcpy((void *)buf, (const void *)usbd_composite_langid_desc, USB_LEN_LANGID_STR_DESC);
 		return USB_LEN_LANGID_STR_DESC;
 	}
 
@@ -366,7 +394,7 @@ static u16 usbd_composite_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u
 {
 	switch (USB_HIGH_BYTE(req->wValue)) {
 	case USB_DESC_TYPE_DEVICE:
-		memcpy(buf, usbd_composite_dev_desc, USB_LEN_DEV_DESC);
+		usb_os_memcpy((void *)buf, (const void *)usbd_composite_dev_desc, USB_LEN_DEV_DESC);
 		return USB_LEN_DEV_DESC;
 
 	case USB_DESC_TYPE_CONFIGURATION:
@@ -374,7 +402,7 @@ static u16 usbd_composite_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u
 		return usbd_composite_build_config_desc(dev, req, buf);
 
 	case USB_DESC_TYPE_DEVICE_QUALIFIER:
-		memcpy(buf, usbd_composite_dev_qualifier_desc, USB_LEN_DEV_QUALIFIER_DESC);
+		usb_os_memcpy((void *)buf, (const void *)usbd_composite_dev_qualifier_desc, USB_LEN_DEV_QUALIFIER_DESC);
 		return USB_LEN_DEV_QUALIFIER_DESC;
 
 	case USB_DESC_TYPE_STRING:
@@ -399,6 +427,11 @@ static int usbd_composite_set_config(usb_dev_t *dev, u8 config)
 	int status;
 	u8 i;
 
+	/* Only the bConfigurationValue advertised in the config descriptor is valid */
+	if (config != 1U) {
+		return HAL_ERR_PARA;
+	}
+
 	cdev->dev = dev;
 
 	usbd_composite_reset_active_func();
@@ -416,8 +449,6 @@ static int usbd_composite_set_config(usb_dev_t *dev, u8 config)
 
 	/* Call each sub-function's set_config.
 	 * Continue on error so all functions get a chance to init their endpoints.
-	 * The caller is expected to issue clear_config (which iterates unconditionally)
-	 * on failure to roll back any partially-initialised functions.
 	 */
 	for (i = 0; i < cdev->func_count; i++) {
 		driver = cdev->drivers[i];
@@ -428,6 +459,12 @@ static int usbd_composite_set_config(usb_dev_t *dev, u8 config)
 				ret = status;
 			}
 		}
+	}
+
+	if (ret != HAL_OK) {
+		/* Roll back the functions that did come up (clear_config iterates
+		 * unconditionally), so a failed set_config leaves nothing initialized */
+		usbd_composite_clear_config(dev, config);
 	}
 
 	return ret;
@@ -460,19 +497,53 @@ static int usbd_composite_clear_config(usb_dev_t *dev, u8 config)
 }
 
 /**
+ * @brief  Find the sub-function that owns interface target_if.
+ * @param  cdev: composite device instance
+ * @param  target_if: interface number to look up
+ * @param  if_base_out: receives the interface base of the owning sub-function
+ * @retval Owning sub-function index, or cdev->func_count if none owns it
+ */
+static u8 usbd_composite_find_owner_func(usbd_composite_dev_t *cdev, u16 target_if, u8 *if_base_out)
+{
+	u8 if_base = 0;
+	u8 i;
+
+	for (i = 0; i < cdev->func_count; i++) {
+		if ((target_if >= if_base) && (target_if < if_base + cdev->if_counts[i])) {
+			*if_base_out = if_base;
+			return i;
+		}
+		if_base += cdev->if_counts[i];
+	}
+
+	*if_base_out = if_base;
+	return cdev->func_count;
+}
+
+/**
  * @brief  Class driver setup callback (class/vendor-specific requests on EP0).
  *         Called within ISR context; time-consuming operations not permitted.
  *
  *         Routing policy:
- *           - SET_INTERFACE / GET_INTERFACE (standard): routed by wIndex to the
- *             sub-function whose interface range contains req->wIndex.
- *           - Other standard requests: iterated across all sub-functions
+ *           - Standard interface-recipient requests (GET_STATUS, CLEAR_FEATURE,
+ *             SET_FEATURE, SET_INTERFACE, GET_INTERFACE, GET_DESCRIPTOR, ...):
+ *             routed by wIndex to the sub-function whose interface range
+ *             contains req->wIndex, and the wIndex passed down is rebased to
+ *             the sub-function's local (0-based) interface number, so class
+ *             drivers can use the same interface constants as in standalone
+ *             mode (e.g. HID picks its Report Descriptor by the local
+ *             interface number, independent of registration order).
+ *             wIndex is consumed inside setup(), so the mutate/restore is safe.
+ *           - Class requests with INTERFACE recipient: routed ONLY to the
+ *             sub-function that owns the interface in the low byte of wIndex.
+ *             This removes the reliance on the fragile "return non-HAL_OK for
+ *             foreign requests" first-accept contract. For Audio Class the low
+ *             byte of wIndex is still the AC interface number (the high byte is
+ *             the Entity ID), so interface routing is correct; UAC dispatches
+ *             internally by Entity ID.
+ *           - Class requests with ENDPOINT/DEVICE recipient, vendor requests,
+ *             and other standard requests: iterated across all sub-functions
  *             (first one to return HAL_OK wins).
- *           - Class requests: iterated across all sub-functions (first-accept).
- *             NOTE: Audio Class (UAC) uses wIndex to carry an Entity ID
- *             (e.g. Feature Unit ID), NOT the interface number. Therefore
- *             interface-range routing does NOT work for Audio Class requests.
- *           - Vendor requests: iterated across all sub-functions (first-accept).
  *
  *         When a sub-function handles a request that has a data-OUT stage
  *         (bmRequestType direction = H2D, wLength > 0), its index is recorded
@@ -486,58 +557,60 @@ static int usbd_composite_setup(usb_dev_t *dev, usb_setup_req_t *req)
 	int ret = HAL_ERR_PARA;
 	u8 has_data_out;
 	u8 if_base;
+	u8 target_if;
+	u8 recipient;
+	u16 saved_windex;
 	u8 i;
 
 	has_data_out = ((req->bmRequestType & USB_REQ_DIR_MASK) == USB_H2D) && (req->wLength > 0);
+	recipient = req->bmRequestType & USB_REQ_RECIPIENT_MASK;
 
 	usbd_composite_reset_active_func();
 
-	/* ── Standard requests: route interface-specific ones by wIndex ── */
-	if ((req->bmRequestType & USB_REQ_TYPE_MASK) == USB_REQ_TYPE_STANDARD) {
-		if ((req->bRequest == USB_REQ_SET_INTERFACE) ||
-			(req->bRequest == USB_REQ_GET_INTERFACE)) {
-			if_base = 0;
-			for (i = 0; i < cdev->func_count; i++) {
-				if (req->wIndex >= if_base &&
-					req->wIndex < if_base + cdev->if_counts[i]) {
-					driver = cdev->drivers[i];
-					if (driver->setup) {
-						ret = driver->setup(dev, req);
-						if ((ret == HAL_OK) && has_data_out) {
-							cdev->active_func = i;
-						}
-					}
-					break;
-				}
-				if_base += cdev->if_counts[i];
+	/* Interface-recipient standard reqs (GET_STATUS/CLEAR_FEATURE/SET_FEATURE/
+	 * GET_INTERFACE/SET_INTERFACE/GET_DESCRIPTOR/...): route by wIndex, rebased
+	 * to sub-function local. Recipient alone identifies these; no need to
+	 * enumerate bRequest. */
+	if (((req->bmRequestType & USB_REQ_TYPE_MASK) == USB_REQ_TYPE_STANDARD) &&
+		(recipient == USB_REQ_RECIPIENT_INTERFACE)) {
+		i = usbd_composite_find_owner_func(cdev, req->wIndex, &if_base);
+		if (i < cdev->func_count) {
+			driver = cdev->drivers[i];
+			if (driver->setup) {
+				saved_windex = req->wIndex;
+				req->wIndex -= if_base;      /* absolute -> sub-function local */
+				ret = driver->setup(dev, req);
+				req->wIndex = saved_windex;  /* restore */
 			}
-			return ret;
 		}
-		/* Other standard requests (GET_STATUS etc.): fall through to first-accept */
+		return ret;
 	}
 
-	/* ── Class requests: iterate (first-accept) ──
-	 * Audio Class (UAC) uses Entity ID in wIndex, which is NOT an interface
-	 * number, so interface-range routing would silently drop all Audio class
-	 * requests.  First-accept iteration fixes this.
+	/* Class requests with INTERFACE recipient: single-cast to the owning sub-function.
+	 * The interface number is the low byte of wIndex (true for all interface class
+	 * requests, including UAC whose high byte carries the Entity ID). Routing to the
+	 * single owner removes first-accept mis-routing (a foreign class driver can no
+	 * longer swallow another function's class request).
 	 */
-	if ((req->bmRequestType & USB_REQ_TYPE_MASK) == USB_REQ_TYPE_CLASS) {
-		for (i = 0; i < cdev->func_count; i++) {
+	if (((req->bmRequestType & USB_REQ_TYPE_MASK) == USB_REQ_TYPE_CLASS) &&
+		(recipient == USB_REQ_RECIPIENT_INTERFACE)) {
+		target_if = (u8)(req->wIndex & 0xFFU);
+		i = usbd_composite_find_owner_func(cdev, target_if, &if_base);
+		if (i < cdev->func_count) {
 			driver = cdev->drivers[i];
 			if (driver->setup) {
 				ret = driver->setup(dev, req);
-				if (ret == HAL_OK) {
-					if (has_data_out) {
-						cdev->active_func = i;
-					}
-					break;
+				if ((ret == HAL_OK) && has_data_out) {
+					cdev->active_func = i;
 				}
 			}
 		}
 		return ret;
 	}
 
-	/* ── Standard (non-SET/GET_INTERFACE) & Vendor requests: iterate (first-accept) ── */
+	/* Remaining: class endpoint/device recipient, vendor, and other standard requests
+	 * (first-accept). Kept for requests whose recipient is not an interface
+	 * (e.g. UAC sampling-rate control addressed to an endpoint). */
 	for (i = 0; i < cdev->func_count; i++) {
 		driver = cdev->drivers[i];
 		if (driver->setup) {
@@ -801,7 +874,7 @@ int usbd_composite_init(const usbd_composite_cb_t *cb)
 	cdev->desc_buf_size = usbd_get_ctrl_xfer_buf_len();
 
 	/* Allocate descriptor scratch buffer */
-	cdev->desc_buf = (u8 *)rtos_mem_malloc(cdev->desc_buf_size);
+	cdev->desc_buf = (u8 *)usb_os_malloc(cdev->desc_buf_size);
 	if (cdev->desc_buf == NULL) {
 		RTK_LOGS(TAG, RTK_LOG_ERROR, "Desc buf alloc fail\n");
 		return HAL_ERR_MEM;
@@ -820,8 +893,6 @@ void usbd_composite_deinit(void)
 {
 	usbd_composite_dev_t *cdev = &usbd_composite_dev;
 
-	if (cdev->desc_buf != NULL) {
-		rtos_mem_free(cdev->desc_buf);
-	}
-	memset(cdev, 0, sizeof(usbd_composite_dev_t));
+	usb_os_mfree((void *)cdev->desc_buf);
+	usb_os_memset((void *)cdev, 0, sizeof(usbd_composite_dev_t));
 }

@@ -16,7 +16,7 @@
 
 /* Private defines -----------------------------------------------------------*/
 
-#if defined(CONFIG_AMEBAGREEN2)
+#if defined(CONFIG_AMEBAGREEN2) || defined(CONFIG_RLE1509)
 #define MSC_BULK_IN_EP                              0x82U
 #define MSC_BULK_OUT_EP                             0x02U
 #else
@@ -61,7 +61,7 @@ static const char *const TAG = "DRD";
 static const usbd_config_t usbd_msc_cfg = {
 	.speed = MSC_USB_SPEED,
 	.isr_priority = INT_PRI_MIDDLE,
-#if defined (CONFIG_AMEBAGREEN2)
+#if defined(CONFIG_AMEBAGREEN2) || defined(CONFIG_RLE1509)
 	.rx_fifo_depth = 708U,
 	.ptx_fifo_depth = {16U, 256U, },
 #elif defined (CONFIG_AMEBAPRO3)
@@ -92,7 +92,7 @@ static const usbh_config_t usbh_cfg = {
 	.isr_priority = INT_PRI_MIDDLE,
 	.main_task_priority = MSC_MAIN_TASK_PRIORITY,
 	.tick_source = USBH_SOF_TICK,
-#if defined (CONFIG_AMEBAGREEN2)
+#if defined(CONFIG_AMEBAGREEN2) || defined(CONFIG_RLE1509)
 	/*FIFO total depth is 1024, reserve 12 for DMA addr*/
 	.rx_fifo_depth = 500,
 	.nptx_fifo_depth = 256,
@@ -255,13 +255,13 @@ void example_usb_drd_msc_trx_test(void *param)
 
 	UNUSED(param);
 
-	msc_wt_buf = (u8 *)rtos_mem_zmalloc(USBH_MSC_TEST_BUF_SIZE);
+	msc_wt_buf = (u8 *)usb_os_malloc(USBH_MSC_TEST_BUF_SIZE);
 	if (msc_wt_buf == NULL) {
 		RTK_LOGS(TAG, RTK_LOG_ERROR, "Fail to alloc test buf\n");
 		goto exit;
 	}
 
-	msc_rd_buf = (u8 *)rtos_mem_zmalloc(USBH_MSC_TEST_BUF_SIZE);
+	msc_rd_buf = (u8 *)usb_os_malloc(USBH_MSC_TEST_BUF_SIZE);
 	if (msc_rd_buf == NULL) {
 		RTK_LOGS(TAG, RTK_LOG_ERROR, "Fail to alloc test buf\n");
 		goto exit_free;
@@ -320,7 +320,7 @@ next_file:
 #if USBH_MSC_CHECK_DATA
 		/* change write data */
 		data = _rand() % 0xFF;
-		memset(msc_wt_buf, data, USBH_MSC_TEST_BUF_SIZE);
+		usb_os_memset((void *)msc_wt_buf, data, USBH_MSC_TEST_BUF_SIZE);
 #endif
 
 		for (i = 0; i < sizeof(test_sizes) / sizeof(test_sizes[0]); ++i) {
@@ -409,12 +409,8 @@ exit_unregister:
 		RTK_LOGS(TAG, RTK_LOG_ERROR, "Fail to unregister disk driver from FATFS\n");
 	}
 exit_free:
-	if (msc_rd_buf) {
-		rtos_mem_free(msc_rd_buf);
-	}
-	if (msc_wt_buf) {
-		rtos_mem_free(msc_wt_buf);
-	}
+	usb_os_mfree((void *)msc_rd_buf);
+	usb_os_mfree((void *)msc_wt_buf);
 exit:
 	rtos_task_delete(NULL);
 }

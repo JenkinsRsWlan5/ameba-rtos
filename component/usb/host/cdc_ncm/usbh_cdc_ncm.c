@@ -112,7 +112,7 @@ typedef struct {
 } __PACKED usbh_cdc_ncm_priv_config_t;
 
 /* Private macros ------------------------------------------------------------*/
-#define USBH_CDC_NCM_FREE_MEM(x)        do { if ((x) != NULL) { usb_os_mfree(x); (x) = NULL; } } while (0U)
+#define USBH_CDC_NCM_FREE_MEM(x)        do { if ((x) != NULL) { usb_os_mfree((void *)(x)); (x) = NULL; } } while (0U)
 
 /* Private function prototypes -----------------------------------------------*/
 static int usbh_cdc_ncm_attach(usb_host_t *host);
@@ -442,7 +442,7 @@ static int usbh_cdc_ncm_process_mac_get_lock(usb_host_t *host)
 
 	ret = usbh_cdc_ncm_vendor_reg_read(host, 0xE81C, 0x010F);
 	if (ret == HAL_OK) {
-		usb_os_memcpy(cdc->mac_ctrl_lock, cdc->dongle_ctrl_buf, CDC_NCM_CTRL_REG_BUF_LEN);
+		usb_os_memcpy((void *)cdc->mac_ctrl_lock, (const void *)cdc->dongle_ctrl_buf, CDC_NCM_CTRL_REG_BUF_LEN);
 	}
 	return ret;
 }
@@ -462,7 +462,7 @@ static int usbh_cdc_ncm_process_mac_set_mac1(usb_host_t *host)
 {
 	usbh_cdc_ncm_host_t *cdc = &usbh_cdc_ncm_host;
 
-	usb_os_memcpy(cdc->dongle_ctrl_buf, cdc->mac, CDC_NCM_CTRL_REG_BUF_LEN);
+	usb_os_memcpy((void *)cdc->dongle_ctrl_buf, (const void *)cdc->mac, CDC_NCM_CTRL_REG_BUF_LEN);
 	return usbh_cdc_ncm_vendor_reg_write(host, 0xC000, 0x010F);
 }
 
@@ -634,10 +634,10 @@ static int usbh_cdc_ncm_ctrl_setting(usb_host_t *host)
 			cdc->sub_status = CDC_NCM_STATE_CTRL_MAC_GET_LOCK;
 			break;
 		}
-		usb_os_memset(cdc->rcr, 0, 4);
+		usb_os_memset((void *)cdc->rcr, 0, 4);
 		state = usbh_cdc_ncm_vendor_reg_read(host, 0xC010, 0x0100);
 		if (state == HAL_OK) {
-			usb_os_memcpy(cdc->rcr, cdc->dongle_ctrl_buf, CDC_NCM_CTRL_REG_BUF_LEN);
+			usb_os_memcpy((void *)cdc->rcr, (const void *)cdc->dongle_ctrl_buf, CDC_NCM_CTRL_REG_BUF_LEN);
 			cdc->sub_status++;
 		} else if (state != HAL_BUSY) {
 			RTK_LOGS(TAG, RTK_LOG_ERROR, "Get RCR err\n");
@@ -652,7 +652,7 @@ static int usbh_cdc_ncm_ctrl_setting(usb_host_t *host)
 		}
 		/* set bit 0~3 set 1 will enable PING & UDP transfer */
 		cdc->rcr[0] = cdc->rcr[0] | 0x0F;
-		usb_os_memcpy(cdc->dongle_ctrl_buf, cdc->rcr, CDC_NCM_CTRL_REG_BUF_LEN);
+		usb_os_memcpy((void *)cdc->dongle_ctrl_buf, (const void *)cdc->rcr, CDC_NCM_CTRL_REG_BUF_LEN);
 		state = usbh_cdc_ncm_vendor_reg_write(host, 0xC010, 0x010F);
 		if (state == HAL_OK) {
 			cdc->sub_status++;
@@ -741,7 +741,7 @@ static int usbh_cdc_ncm_parse_ctrl(usbh_itf_data_t *itf_data)
 	cdc->ctrl_itf_id = itf_desc->bInterfaceNumber;
 
 	/* Get INTR endpoint from the parsed descriptor */
-	usb_os_memcpy(&ctrl_ep->ep_desc, &itf_desc->ep_desc_array[0], sizeof(usbh_ep_desc_t));
+	usb_os_memcpy((void *)&ctrl_ep->ep_desc, (const void *)&itf_desc->ep_desc_array[0], sizeof(usbh_ep_desc_t));
 	ctrl_ep->valid = 1;
 
 	/* Scan raw_data for the NCM functional descriptor */
@@ -834,10 +834,10 @@ static int usbh_cdc_ncm_parse_interface_desc(usb_host_t *host)
 		for (i = 0; i < data_itf_desc->bNumEndpoints; i++) {
 			ep = &data_itf_desc->ep_desc_array[i];
 			if (USB_EP_IS_IN(ep->bEndpointAddress)) {
-				usb_os_memcpy(&cdc->bulk_rx.ep_desc, ep, sizeof(usbh_ep_desc_t));
+				usb_os_memcpy((void *)&cdc->bulk_rx.ep_desc, (const void *)ep, sizeof(usbh_ep_desc_t));
 				cdc->bulk_rx.valid = 1;
 			} else {
-				usb_os_memcpy(&cdc->bulk_tx.ep_desc, ep, sizeof(usbh_ep_desc_t));
+				usb_os_memcpy((void *)&cdc->bulk_tx.ep_desc, (const void *)ep, sizeof(usbh_ep_desc_t));
 				cdc->bulk_tx.valid = 1;
 			}
 		}
@@ -913,7 +913,7 @@ static int usbh_cdc_ncm_build_ntb16_frame(u8 *eth_buf, u16 eth_len, u8 *ntb_buf,
 	ndp->aEntry[1].wDatagramLength = 0;
 
 	/* Copy Ethernet frame */
-	memcpy(ntb_buf + datagram_offset, eth_buf, eth_len);
+	usb_os_memcpy((void *)(ntb_buf + datagram_offset), (const void *)eth_buf, eth_len);
 
 	/* Calculate total NTB length */
 	*ntb_len = datagram_offset + eth_len;
@@ -1040,8 +1040,16 @@ static int usbh_cdc_ncm_attach(usb_host_t *host)
 	/* Control IN (INTR) */
 	pipe_info = &(cdc->intr_rx);
 	if (pipe_info->valid) {
-		usbh_open_pipe(host, &(pipe_info->pipe), &(pipe_info->ep_desc), &usbh_cdc_ncm_driver);
+		if (usbh_open_pipe(host, &(pipe_info->pipe), &(pipe_info->ep_desc), &usbh_cdc_ncm_driver) != HAL_OK) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "Open intr pipe fail\n");
+			return HAL_ERR_PARA;
+		}
 		pipe_info->pipe.xfer_buf = (u8 *)usb_os_malloc(pipe_info->pipe.ep_mps);
+		if (pipe_info->pipe.xfer_buf == NULL) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "Malloc intr rx buf fail\n");
+			usbh_cdc_ncm_deinit_all_pipe();
+			return HAL_ERR_MEM;
+		}
 		pipe_info->pipe.xfer_len = pipe_info->pipe.ep_mps;
 		pipe_info->pipe.xfer_state = USBH_EP_XFER_START;
 
@@ -1052,16 +1060,29 @@ static int usbh_cdc_ncm_attach(usb_host_t *host)
 	/* BULK OUT (TX) */
 	pipe_info = &(cdc->bulk_tx);
 	if (pipe_info->valid) {
-		usbh_open_pipe(host, &(pipe_info->pipe), &(pipe_info->ep_desc), &usbh_cdc_ncm_driver);
+		if (usbh_open_pipe(host, &(pipe_info->pipe), &(pipe_info->ep_desc), &usbh_cdc_ncm_driver) != HAL_OK) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "Open bulk out pipe fail\n");
+			usbh_cdc_ncm_deinit_all_pipe();
+			return HAL_ERR_PARA;
+		}
 		pipe_info->pipe.max_timeout_tick = USBH_CDC_NCM_BULK_OUT_BUSY_MAX_CNT;
 	}
 
 	/* BULK IN (RX) */
 	pipe_info = &(cdc->bulk_rx);
 	if (pipe_info->valid) {
-		usbh_open_pipe(host, &(pipe_info->pipe), &(pipe_info->ep_desc), &usbh_cdc_ncm_driver);
+		if (usbh_open_pipe(host, &(pipe_info->pipe), &(pipe_info->ep_desc), &usbh_cdc_ncm_driver) != HAL_OK) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "Open bulk in pipe fail\n");
+			usbh_cdc_ncm_deinit_all_pipe();
+			return HAL_ERR_PARA;
+		}
 		/* NCM use bulk, allocate buffer for NTB reception */
 		pipe_info->pipe.xfer_buf = (u8 *)usb_os_malloc(USBH_CDC_NCM_RX_NTB_BUF_SIZE);
+		if (pipe_info->pipe.xfer_buf == NULL) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "Malloc bulk rx buf fail\n");
+			usbh_cdc_ncm_deinit_all_pipe();
+			return HAL_ERR_MEM;
+		}
 		pipe_info->pipe.xfer_len = USBH_CDC_NCM_RX_NTB_BUF_SIZE;
 		pipe_info->pipe.xfer_state = USBH_EP_XFER_START;
 
@@ -1567,7 +1588,7 @@ static void usbh_cdc_ncm_agg_append(u8 *eth_buf, u16 eth_len)
 	u16 div = usbh_cdc_ncm_agg_divisor();
 	u16 dg_index = (cdc->tx_agg_write_off[b] + (div - 1U)) & ~(div - 1U);
 
-	memcpy(cdc->tx_agg_buf[b] + dg_index, eth_buf, eth_len);
+	usb_os_memcpy((void *)(cdc->tx_agg_buf[b] + dg_index), (const void *)eth_buf, eth_len);
 	cdc->tx_agg_data_pos_idx[b][cdc->tx_agg_pkt_cnt[b]] = dg_index;
 	cdc->tx_agg_pkt_len[b][cdc->tx_agg_pkt_cnt[b]] = eth_len;
 	cdc->tx_agg_pkt_cnt[b]++;
@@ -1785,6 +1806,10 @@ static void usbh_cdc_ncm_deinit_all_pipe(void)
 	usbh_cdc_ncm_host_t *cdc = &usbh_cdc_ncm_host;
 	usb_host_t *host = cdc->host;
 
+	if (host == NULL) {
+		return;
+	}
+
 	if (cdc->intr_rx.pipe.pipe_num != 0U) {
 		USBH_CDC_NCM_FREE_MEM(cdc->intr_rx.pipe.xfer_buf);
 		usbh_close_pipe(host, &(cdc->intr_rx.pipe));
@@ -1917,7 +1942,7 @@ int usbh_cdc_ncm_init(const usbh_cdc_ncm_state_cb_t *cb, const usbh_cdc_ncm_priv
 	cdc->mac_valid = 0;
 
 	/* Reset NCM specific fields */
-	memset(&cdc->ntb_params, 0, sizeof(usb_cdc_ncm_ntb_parameters_t));
+	usb_os_memset((void *)&cdc->ntb_params, 0, sizeof(usb_cdc_ncm_ntb_parameters_t));
 	cdc->ntb_in_max_size = USB_CDC_NCM_DEFAULT_NTB_INPUT_SIZE;
 	cdc->ntb_out_max_size = USB_CDC_NCM_DEFAULT_NTB_INPUT_SIZE;
 	cdc->ntb_sequence = 0;
@@ -1926,7 +1951,7 @@ int usbh_cdc_ncm_init(const usbh_cdc_ncm_state_cb_t *cb, const usbh_cdc_ncm_priv
 		RTK_LOGS(TAG, RTK_LOG_WARN, "Param error\n");
 	} else {
 		if (priv->mac_value) {
-			memcpy((void *) & (cdc->mac[0]), (const void *)priv->mac_value, CDC_NCM_MAC_STR_LEN);
+			usb_os_memcpy((void *) & (cdc->mac[0]), (const void *)priv->mac_value, CDC_NCM_MAC_STR_LEN);
 			cdc->mac_src_type = CDC_NCM_MAC_UPPER_LAYER_SET;
 		}
 	}

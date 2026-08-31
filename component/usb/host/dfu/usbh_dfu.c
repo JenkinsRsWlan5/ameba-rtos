@@ -107,7 +107,7 @@ static int usbh_dfu_attach(usb_host_t *host)
 	remaining = itf_data->raw_data_len;
 	offset    = 0U;
 
-	usb_os_memset(&dfu->func_desc, 0, sizeof(dfu->func_desc));
+	usb_os_memset((void *)&dfu->func_desc, 0, sizeof(dfu->func_desc));
 
 	while (offset + 2U <= remaining) {
 		u8 desc_len  = buf[offset];
@@ -816,7 +816,7 @@ int usbh_dfu_init(const usbh_dfu_cb_t *cb)
 		return HAL_ERR_PARA;
 	}
 
-	usb_os_memset(dfu, 0, sizeof(usbh_dfu_host_t));
+	usb_os_memset((void *)dfu, 0, sizeof(usbh_dfu_host_t));
 	dfu->cb = cb;
 
 	/* Allocate the DMA-aligned transfer buffer */
@@ -827,7 +827,7 @@ int usbh_dfu_init(const usbh_dfu_cb_t *cb)
 	}
 	if (!USB_IS_MEM_DMA_ALIGNED(dfu->xfer_buf)) {
 		RTK_LOGS(TAG, RTK_LOG_ERROR, "xfer_buf not DMA-aligned\n");
-		usb_os_mfree(dfu->xfer_buf);
+		usb_os_mfree((void *)dfu->xfer_buf);
 		dfu->xfer_buf = NULL;
 		return HAL_ERR_MEM;
 	}
@@ -836,7 +836,7 @@ int usbh_dfu_init(const usbh_dfu_cb_t *cb)
 		ret = cb->init();
 		if (ret != HAL_OK) {
 			RTK_LOGS(TAG, RTK_LOG_ERROR, "User init err %d\n", ret);
-			usb_os_mfree(dfu->xfer_buf);
+			usb_os_mfree((void *)dfu->xfer_buf);
 			dfu->xfer_buf = NULL;
 			return ret;
 		}
@@ -861,12 +861,10 @@ int usbh_dfu_deinit(void)
 
 	usbh_unregister_class(&usbh_dfu_driver);
 
-	if (dfu->xfer_buf != NULL) {
-		usb_os_mfree(dfu->xfer_buf);
-		dfu->xfer_buf = NULL;
-	}
+	usb_os_mfree((void *)dfu->xfer_buf);
+	dfu->xfer_buf = NULL;
 
-	usb_os_memset(dfu, 0, sizeof(usbh_dfu_host_t));
+	usb_os_memset((void *)dfu, 0, sizeof(usbh_dfu_host_t));
 
 	return HAL_OK;
 }

@@ -13,10 +13,12 @@ Attach SD card to the SDIOH slot on the board.
 	```
 	[*] Enable USB
 			USB Mode (Device)  --->
-	[*] Composite
+		*** USB Device Class Selection ***
 	[*] CDC ACM
 	[*] MSC
 			Select storage media (RAM)  --->
+		*** USB Device Global Settings ***
+	[*] Composite function enable
 	```
 	Save and exit.
 

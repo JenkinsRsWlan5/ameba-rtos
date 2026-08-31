@@ -90,40 +90,6 @@ static unsigned int rtw_classify8021d(struct sk_buff *skb)
 	return dscp >> 5;
 }
 
-static u8 qos_acm(u8 acm_mask, u8 priority)
-{
-	u8 change_priority = priority;
-
-	switch (priority) {
-	case 0:
-	case 3:
-		if (acm_mask & BIT(1)) {
-			change_priority = 1;
-		}
-		break;
-	case 1:
-	case 2:
-		break;
-	case 4:
-	case 5:
-		if (acm_mask & BIT(2)) {
-			change_priority = 0;
-		}
-		break;
-	case 6:
-	case 7:
-		if (acm_mask & BIT(3)) {
-			change_priority = 5;
-		}
-		break;
-	default:
-		dev_warn(global_idev.pwhc_dev, "qos_acm(): invalid pattrib->priority: %d!!!\n", priority);
-		break;
-	}
-
-	return change_priority;
-}
-
 /*
  * AC to queue mapping
  *

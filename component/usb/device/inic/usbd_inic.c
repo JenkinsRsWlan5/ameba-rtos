@@ -932,6 +932,11 @@ static int usbd_inic_set_config(usb_dev_t *dev, u8 config)
 	usbd_inic_dev_t *idev = &usbd_inic_dev;
 	usbd_otp_t *otp = &idev->otp;
 
+	/* Only the bConfigurationValue advertised in the config descriptor is valid */
+	if (config != 1U) {
+		return HAL_ERR_PARA;
+	}
+
 	idev->dev = dev;
 
 	usbd_inic_set_wifi_config(dev, config);
@@ -1178,7 +1183,7 @@ static int usbd_inic_setup(usb_dev_t *dev, usb_setup_req_t *req)
 		} else {
 			if (req->wLength) {
 				// SETUP + DATA OUT + STATUS, the DATA OUT phase is processed in ep0_data_out callback
-				usb_os_memcpy((void *)&idev->ctrl_req, (void *)req, sizeof(usb_setup_req_t));
+				usb_os_memcpy((void *)&idev->ctrl_req, (const void *)req, sizeof(usb_setup_req_t));
 				ep0_out->xfer_len = req->wLength;
 				usbd_ep_receive(dev, ep0_out);
 			} else {
@@ -1312,7 +1317,7 @@ static u16 usbd_inic_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *bu
 
 		len = USB_LEN_DEV_DESC;
 
-		usb_os_memcpy((void *)buf, (void *)desc, len);
+		usb_os_memcpy((void *)buf, (const void *)desc, len);
 
 		if (otp->otp_param) {
 			buf[USB_DEV_DESC_OFFSET_VID] = USB_LOW_BYTE(otp->vid);
@@ -1343,7 +1348,7 @@ static u16 usbd_inic_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *bu
 				len = sizeof(usbd_inic_wifi_only_mode_full_speed_config_desc);
 			}
 		}
-		usb_os_memcpy((void *)buf, (void *)desc, len);
+		usb_os_memcpy((void *)buf, (const void *)desc, len);
 		buf[USB_CFG_DESC_OFFSET_TOTAL_LEN] = USB_LOW_BYTE(len);
 		buf[USB_CFG_DESC_OFFSET_TOTAL_LEN + 1] = USB_HIGH_BYTE(len);
 		buf[USB_CFG_DESC_OFFSET_ATTR] &= ~(USB_CFG_DESC_OFFSET_ATTR_BIT_SELF_POWERED | USB_CFG_DESC_OFFSET_ATTR_BIT_REMOTE_WAKEUP);
@@ -1357,7 +1362,7 @@ static u16 usbd_inic_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *bu
 
 	case USB_DESC_TYPE_DEVICE_QUALIFIER:
 		len = USB_LEN_DEV_QUALIFIER_DESC;
-		usb_os_memcpy((void *)buf, (void *)usbd_inic_dev_qualifier_desc, len);
+		usb_os_memcpy((void *)buf, (const void *)usbd_inic_dev_qualifier_desc, len);
 		break;
 
 	case USB_DESC_TYPE_OTHER_SPEED_CONFIGURATION:
@@ -1378,7 +1383,7 @@ static u16 usbd_inic_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *bu
 				len = sizeof(usbd_inic_single_wifi_mode_config_desc);
 			}
 		}
-		usb_os_memcpy((void *)buf, (void *)desc, len);
+		usb_os_memcpy((void *)buf, (const void *)desc, len);
 		buf[USB_CFG_DESC_OFFSET_TOTAL_LEN] = USB_LOW_BYTE(len);
 		buf[USB_CFG_DESC_OFFSET_TOTAL_LEN + 1] = USB_HIGH_BYTE(len);
 		buf[USB_CFG_DESC_OFFSET_TYPE] = USB_DESC_TYPE_OTHER_SPEED_CONFIGURATION;
@@ -1395,12 +1400,12 @@ static u16 usbd_inic_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *bu
 		switch (USB_LOW_BYTE(req->wValue)) {
 		case USBD_IDX_LANGID_STR:
 			len = USB_LEN_LANGID_STR_DESC;
-			usb_os_memcpy((void *)buf, (void *)usbd_inic_lang_id_desc, len);
+			usb_os_memcpy((void *)buf, (const void *)usbd_inic_lang_id_desc, len);
 			break;
 		case USBD_IDX_MFC_STR:
 			if (otp->otp_param) {
 				len = otp->mfg_str_len;
-				usb_os_memcpy((void *)buf, (void *)otp->mfg_str, len);
+				usb_os_memcpy((void *)buf, (const void *)otp->mfg_str, len);
 			} else {
 				len = usbd_get_str_desc(USBD_INIC_MFG_STRING, buf);
 			}
@@ -1408,7 +1413,7 @@ static u16 usbd_inic_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *bu
 		case USBD_IDX_PRODUCT_STR:
 			if (otp->otp_param) {
 				len = otp->prod_str_len;
-				usb_os_memcpy((void *)buf, (void *)otp->prod_str, len);
+				usb_os_memcpy((void *)buf, (const void *)otp->prod_str, len);
 			} else {
 				len = usbd_get_str_desc(USBD_INIC_PROD_STRING, buf);
 			}
@@ -1416,7 +1421,7 @@ static u16 usbd_inic_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *bu
 		case USBD_IDX_SERIAL_STR:
 			if (otp->otp_sn) {
 				len = otp->sn_str_len;
-				usb_os_memcpy((void *)buf, (void *)otp->sn_str, len);
+				usb_os_memcpy((void *)buf, (const void *)otp->sn_str, len);
 			} else {
 				len = usbd_get_str_desc(USBD_INIC_SN_STRING, buf);
 			}
@@ -1666,7 +1671,7 @@ int usbd_inic_transmit_ctrl_data(u8 *buf, u16 len)
 	if (len > ep0_in->xfer_buf_len) {
 		len = ep0_in->xfer_buf_len;
 	}
-	usb_os_memcpy((void *)ep0_in->xfer_buf, (void *)buf, len);
+	usb_os_memcpy((void *)ep0_in->xfer_buf, (const void *)buf, len);
 	ep0_in->xfer_len = len;
 	usbd_ep_transmit(dev, ep0_in);
 

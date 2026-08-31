@@ -132,6 +132,18 @@ endmenu
 
 menu "RAM Layout Configuration"
 
+# SRAM top the images are linked against: 512K parts end at 0x20080000, 768K parts at 0x200C0000.
+config SRAM_END
+    hex "SRAM end address"
+    depends on !DSP_EN && DATA_HEAP_SRAM
+    range 0x20080000 0x200C0000
+    default 0x20080000
+    help
+        Set to the SRAM top of the part in use (4K aligned): 0x20080000 for 512K, up to
+        0x200C0000 for 768K. The extra space grows the elastic image2 region (KM4 as WHC
+        host / single core, else KR4) for sections and its tail heap. The bootloader checks
+        the setting against the real SRAM top and warns when it does not match.
+
 # TrustZone secure image (Image3) size. For SoCs without PSRAM this region may
 # live in SRAM, so it is a general RAM-layout parameter, configured per IC.
 config TZ_S_SIZE

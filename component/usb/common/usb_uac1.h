@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-#define USB_UAC1_VERSION_01_10                      0x110U
+#define USB_UAC1_VERSION_01_00                      0x100U
 
 /* usbd uac */
 #define USB_UAC1_IF_IDX_AC_HEADSET                          0x00U

@@ -85,19 +85,13 @@ void wifi_hal_radar_parm_set(char *cmd_ptr, u32 extra_arg)
 	(void)extra_arg;
 }
 
+void wifi_hal_radar_bb_parm_set(char *cmd_ptr, u32 extra_arg)
+{
+	(void)cmd_ptr;
+	(void)extra_arg;
+}
+
 void wifi_hal_dbg_radar_psd_check(char *cmd_ptr, u32 extra_arg)
-{
-	(void)cmd_ptr;
-	(void)extra_arg;
-}
-
-void wifi_hal_dbg_radar_edcca_th(char *cmd_ptr, u32 extra_arg)
-{
-	(void)cmd_ptr;
-	(void)extra_arg;
-}
-
-void wifi_hal_dbg_radar_intf_det_th(char *cmd_ptr, u32 extra_arg)
 {
 	(void)cmd_ptr;
 	(void)extra_arg;

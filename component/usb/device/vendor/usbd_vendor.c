@@ -272,7 +272,10 @@ static int usbd_vendor_set_config(usb_dev_t *dev, u8 config)
 	u8 speed = dev->dev_speed;
 	usb_ep_info_t *info;
 
-	UNUSED(config);
+	/* Only the bConfigurationValue advertised in the config descriptor is valid */
+	if (config != 1U) {
+		return HAL_ERR_PARA;
+	}
 
 	cdev->dev = dev;
 
@@ -304,7 +307,7 @@ static int usbd_vendor_set_config(usb_dev_t *dev, u8 config)
 	usbd_ep_init(dev, ep_intr_out);
 	ret = usbd_ep_receive(dev, ep_intr_out);
 	if (ret != HAL_OK) {
-		return ret;
+		goto exit_clear_config;
 	}
 
 	/* Init BULK IN EP */
@@ -319,7 +322,7 @@ static int usbd_vendor_set_config(usb_dev_t *dev, u8 config)
 	usbd_ep_init(dev, ep_bulk_out);
 	ret = usbd_ep_receive(dev, ep_bulk_out);
 	if (ret != HAL_OK) {
-		return ret;
+		goto exit_clear_config;
 	}
 
 	/* Init ISO IN EP */
@@ -335,13 +338,18 @@ static int usbd_vendor_set_config(usb_dev_t *dev, u8 config)
 	usbd_ep_init(dev, ep_isoc_out);
 	ret = usbd_ep_receive(dev, ep_isoc_out);
 	if (ret != HAL_OK) {
-		return ret;
+		goto exit_clear_config;
 	}
 
 	if (cdev->cb->set_config != NULL) {
 		cdev->cb->set_config();
 	}
 
+	return ret;
+
+exit_clear_config:
+	/* Release the endpoints initialized above */
+	usbd_vendor_clear_config(dev, config);
 	return ret;
 }
 
@@ -453,7 +461,7 @@ static int usbd_vendor_setup(usb_dev_t *dev, usb_setup_req_t *req)
 					usbd_ep_transmit(dev, ep0_in);
 				}
 			} else {
-				usb_os_memcpy((void *)&cdev->ctrl_req, (void *)req, sizeof(usb_setup_req_t));
+				usb_os_memcpy((void *)&cdev->ctrl_req, (const void *)req, sizeof(usb_setup_req_t));
 				ep0_out->xfer_len = req->wLength;
 				usbd_ep_receive(dev, ep0_out);
 			}
@@ -633,7 +641,7 @@ static u16 usbd_vendor_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *
 
 	case USB_DESC_TYPE_DEVICE:
 		len = sizeof(usbd_vendor_dev_desc);
-		usb_os_memcpy((void *)buf, (void *)usbd_vendor_dev_desc, len);
+		usb_os_memcpy((void *)buf, (const void *)usbd_vendor_dev_desc, len);
 		break;
 
 	case USB_DESC_TYPE_CONFIGURATION:
@@ -647,7 +655,7 @@ static u16 usbd_vendor_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *
 			desc = (u8 *)usbd_vendor_fs_config_desc;
 			len = sizeof(usbd_vendor_fs_config_desc);
 		}
-		usb_os_memcpy((void *)buf, (void *)desc, len);
+		usb_os_memcpy((void *)buf, (const void *)desc, len);
 		if (!cdev->from_composite) {
 			buf[USB_CFG_DESC_OFFSET_ATTR] = attr;
 		}
@@ -662,7 +670,7 @@ static u16 usbd_vendor_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *
 #ifndef CONFIG_USB_FS
 	case USB_DESC_TYPE_DEVICE_QUALIFIER:
 		len = sizeof(usbd_vendor_device_qualifier_desc);
-		usb_os_memcpy((void *)buf, (void *)usbd_vendor_device_qualifier_desc, len);
+		usb_os_memcpy((void *)buf, (const void *)usbd_vendor_device_qualifier_desc, len);
 		break;
 
 	case USB_DESC_TYPE_OTHER_SPEED_CONFIGURATION:
@@ -673,7 +681,7 @@ static u16 usbd_vendor_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *
 			desc = (u8 *)usbd_vendor_hs_config_desc;
 			len = sizeof(usbd_vendor_hs_config_desc);
 		}
-		usb_os_memcpy((void *)buf, (void *)desc, len);
+		usb_os_memcpy((void *)buf, (const void *)desc, len);
 		if (!cdev->from_composite) {
 			buf[USB_CFG_DESC_OFFSET_ATTR] = attr;
 		}
@@ -690,7 +698,7 @@ static u16 usbd_vendor_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 *
 		switch (USB_LOW_BYTE(req->wValue)) {
 		case USBD_IDX_LANGID_STR:
 			len = sizeof(usbd_vendor_lang_id_desc);
-			usb_os_memcpy((void *)buf, (void *)usbd_vendor_lang_id_desc, len);
+			usb_os_memcpy((void *)buf, (const void *)usbd_vendor_lang_id_desc, len);
 			break;
 		case USBD_IDX_MFC_STR:
 			len = usbd_get_str_desc(USBD_VENDOR_MFG_STRING, buf);
@@ -851,27 +859,27 @@ static int usbd_vendor_private_init(const usbd_vendor_cb_t *cb, const usbd_vendo
 	return ret;
 
 init_clean_isoc_in_buf_exit:
-	usb_os_mfree(ep_isoc_in->xfer_buf);
+	usb_os_mfree((void *)ep_isoc_in->xfer_buf);
 	ep_isoc_in->xfer_buf = NULL;
 
 init_clean_isoc_out_buf_exit:
-	usb_os_mfree(ep_isoc_out->xfer_buf);
+	usb_os_mfree((void *)ep_isoc_out->xfer_buf);
 	ep_isoc_out->xfer_buf = NULL;
 
 init_clean_intr_in_buf_exit:
-	usb_os_mfree(ep_intr_in->xfer_buf);
+	usb_os_mfree((void *)ep_intr_in->xfer_buf);
 	ep_intr_in->xfer_buf = NULL;
 
 init_clean_intr_out_buf_exit:
-	usb_os_mfree(ep_intr_out->xfer_buf);
+	usb_os_mfree((void *)ep_intr_out->xfer_buf);
 	ep_intr_out->xfer_buf = NULL;
 
 init_clean_bulk_in_buf_exit:
-	usb_os_mfree(ep_bulk_in->xfer_buf);
+	usb_os_mfree((void *)ep_bulk_in->xfer_buf);
 	ep_bulk_in->xfer_buf = NULL;
 
 init_clean_bulk_out_buf_exit:
-	usb_os_mfree(ep_bulk_out->xfer_buf);
+	usb_os_mfree((void *)ep_bulk_out->xfer_buf);
 	ep_bulk_out->xfer_buf = NULL;
 
 init_exit:
@@ -955,35 +963,23 @@ int usbd_vendor_deinit(void)
 		usbd_unregister_class();
 	}
 
-	if (ep_bulk_in->xfer_buf != NULL) {
-		usb_os_mfree(ep_bulk_in->xfer_buf);
-		ep_bulk_in->xfer_buf = NULL;
-	}
+	usb_os_mfree((void *)ep_bulk_in->xfer_buf);
+	ep_bulk_in->xfer_buf = NULL;
 
-	if (ep_bulk_out->xfer_buf != NULL) {
-		usb_os_mfree(ep_bulk_out->xfer_buf);
-		ep_bulk_out->xfer_buf = NULL;
-	}
+	usb_os_mfree((void *)ep_bulk_out->xfer_buf);
+	ep_bulk_out->xfer_buf = NULL;
 
-	if (ep_intr_in->xfer_buf != NULL) {
-		usb_os_mfree(ep_intr_in->xfer_buf);
-		ep_intr_in->xfer_buf = NULL;
-	}
+	usb_os_mfree((void *)ep_intr_in->xfer_buf);
+	ep_intr_in->xfer_buf = NULL;
 
-	if (ep_intr_out->xfer_buf != NULL) {
-		usb_os_mfree(ep_intr_out->xfer_buf);
-		ep_intr_out->xfer_buf = NULL;
-	}
+	usb_os_mfree((void *)ep_intr_out->xfer_buf);
+	ep_intr_out->xfer_buf = NULL;
 
-	if (ep_isoc_in->xfer_buf != NULL) {
-		usb_os_mfree(ep_isoc_in->xfer_buf);
-		ep_isoc_in->xfer_buf = NULL;
-	}
+	usb_os_mfree((void *)ep_isoc_in->xfer_buf);
+	ep_isoc_in->xfer_buf = NULL;
 
-	if (ep_isoc_out->xfer_buf != NULL) {
-		usb_os_mfree(ep_isoc_out->xfer_buf);
-		ep_isoc_out->xfer_buf = NULL;
-	}
+	usb_os_mfree((void *)ep_isoc_out->xfer_buf);
+	ep_isoc_out->xfer_buf = NULL;
 
 	return HAL_OK;
 }
@@ -1005,7 +1001,7 @@ int usbd_vendor_transmit_bulk_data(u8 *buf, u32 len)
 
 	if (ep_bulk_in->xfer_state == 0U) {
 		ep_bulk_in->xfer_state = 1U;
-		usb_os_memcpy((void *)ep_bulk_in->xfer_buf, (void *)buf, len);
+		usb_os_memcpy((void *)ep_bulk_in->xfer_buf, (const void *)buf, len);
 		ep_bulk_in->xfer_len = len;
 		ret = usbd_ep_transmit(dev, ep_bulk_in);
 	} else {
@@ -1032,7 +1028,7 @@ int usbd_vendor_transmit_intr_data(u8 *buf, u32 len)
 
 	if (ep_intr_in->xfer_state == 0U) {
 		ep_intr_in->xfer_state = 1U;
-		usb_os_memcpy((void *)ep_intr_in->xfer_buf, (void *)buf, len);
+		usb_os_memcpy((void *)ep_intr_in->xfer_buf, (const void *)buf, len);
 		ep_intr_in->xfer_len = len;
 		ret = usbd_ep_transmit(dev, ep_intr_in);
 	} else {
@@ -1056,7 +1052,7 @@ int usbd_vendor_transmit_isoc_data(u8 *buf, u32 len)
 		len = ep_isoc_in->xfer_buf_len;
 	}
 
-	usb_os_memcpy(ep_isoc_in->xfer_buf, buf, len);
+	usb_os_memcpy((void *)ep_isoc_in->xfer_buf, (const void *)buf, len);
 	ep_isoc_in->xfer_len = len;
 	return usbd_ep_transmit(cdev->dev, ep_isoc_in);
 }

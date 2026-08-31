@@ -131,11 +131,11 @@ static int  usbd_scsi_inquiry(usbd_msc_dev_t *cdev, u8 *params)
 		switch (params[2]) {
 		case 0x00U:
 			cdev->data_length = PAGE00_INQUIRY_DATA_LEN;
-			usb_os_memcpy((void *)cdev->data, (void *)usbd_msc_page0_inquiry_data, cdev->data_length);
+			usb_os_memcpy((void *)cdev->data, (const void *)usbd_msc_page0_inquiry_data, cdev->data_length);
 			break;
 		case 0x80U:
 			cdev->data_length = PAGE80_INQUIRY_DATA_LEN;
-			usb_os_memcpy((void *)cdev->data, (void *)usbd_msc_page80_inquiry_data, cdev->data_length);
+			usb_os_memcpy((void *)cdev->data, (const void *)usbd_msc_page80_inquiry_data, cdev->data_length);
 			break;
 		default:
 			usbd_scsi_sense_code(cdev, SCSI_SENSE_KEY_ILLEGAL_REQUEST, SCSI_ASC_INVALID_FIELD_IN_CDB);
@@ -151,7 +151,7 @@ static int  usbd_scsi_inquiry(usbd_msc_dev_t *cdev, u8 *params)
 		/* INQUIRY allocation length is a 16-bit big-endian field (CDB bytes 3-4) */
 		alloc_len = ((u16)params[3] << 8) | params[4];
 		cdev->data_length = MIN(alloc_len, INQUIRY_DATA_LEN);
-		usb_os_memcpy((void *)cdev->data, (void *)usbd_msc_standard_inquiry_data, cdev->data_length);
+		usb_os_memcpy((void *)cdev->data, (const void *)usbd_msc_standard_inquiry_data, cdev->data_length);
 	}
 
 	return HAL_OK;
@@ -237,7 +237,7 @@ static int usbd_scsi_mode_sense6(usbd_msc_dev_t *cdev, u8 *params)
 	UNUSED(params);
 
 	cdev->data_length = MODE_SENSE6_DATA_LEN;
-	usb_os_memcpy((void *)cdev->data, (void *)usbd_msc_mode_sense6_data, cdev->data_length);
+	usb_os_memcpy((void *)cdev->data, (const void *)usbd_msc_mode_sense6_data, cdev->data_length);
 	if (cdev->ro) {
 		cdev->data[2] |= 0x80U;  /* SPC-4: byte 2 bit 7 = WP */
 	}
@@ -256,7 +256,7 @@ static int usbd_scsi_mode_sense10(usbd_msc_dev_t *cdev, u8 *params)
 	UNUSED(params);
 
 	cdev->data_length = MODE_SENSE10_DATA_LEN;
-	usb_os_memcpy((void *)cdev->data, (void *)usbd_msc_mode_sense10_data, cdev->data_length);
+	usb_os_memcpy((void *)cdev->data, (const void *)usbd_msc_mode_sense10_data, cdev->data_length);
 	if (cdev->ro) {
 		cdev->data[3] |= 0x80U;  /* SPC-4: byte 3 bit 7 = WP */
 	}

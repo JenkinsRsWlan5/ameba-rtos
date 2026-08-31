@@ -512,11 +512,11 @@ static int usbd_cdc_ncm_agg_append(ncm_tx_ntb_t *slot, u8 *frame, u32 frame_len)
 	entry->wDatagramLength = (u16)frame_len;
 
 	/* Copy frame data */
-	usb_os_memcpy(slot->buf + slot->data_offset, frame, frame_len);
+	usb_os_memcpy((void *)(slot->buf + slot->data_offset), (const void *)frame, frame_len);
 
 	/* Zero-pad to alignment boundary */
 	if (aligned_frame_len > frame_len) {
-		usb_os_memset(slot->buf + slot->data_offset + frame_len,
+		usb_os_memset((void *)(slot->buf + slot->data_offset + frame_len),
 					  0, aligned_frame_len - frame_len);
 	}
 
@@ -708,7 +708,7 @@ static void usbd_cdc_ncm_tx_task(void *param)
 	}
 
 task_exit:
-	usb_os_mfree(frame_buf);
+	usb_os_mfree((void *)frame_buf);
 	ncm->tx_task = NULL;
 	rtos_task_delete(NULL);
 }
@@ -801,7 +801,7 @@ static void usbd_cdc_ncm_set_mac(const u8 *mac)
 		return;
 	}
 
-	memcpy((void *) & (ncm->mac[0]), (void *)mac, USBD_CDC_NCM_MAC_STR_LEN);
+	usb_os_memcpy((void *) & (ncm->mac[0]), (const void *)mac, USBD_CDC_NCM_MAC_STR_LEN);
 }
 
 /**
@@ -856,7 +856,7 @@ static int usbd_cdc_ncm_bulk_receive(u8 *buf, u32 length)
 	ndp_offset = nth16->wFpIndex;
 	while (ndp_offset != 0U) {
 		/* Check that this NDP header fits within the received data. */
-		if (((u32)ndp_offset + sizeof(usb_cdc_ncm_ndp16_t)) > length) {
+		if ((ndp_offset + sizeof(usb_cdc_ncm_ndp16_t)) > length) {
 			RTK_LOGS(TAG, RTK_LOG_ERROR, "NDP beyond RX len: off=%d, len=%d\n",
 					 ndp_offset, length);
 			break;
@@ -875,7 +875,7 @@ static int usbd_cdc_ncm_bulk_receive(u8 *buf, u32 length)
 		 * and the whole NDP (header + entry array) must fit within the received
 		 * data, otherwise reading aEntry[i] below would read past the buffer. */
 		if ((ndp16->wLength < (USB_CDC_NCM_NDP16_MIN_LENGTH)) ||
-			(((u32)ndp_offset + ndp16->wLength) > length)) {
+			((ndp_offset + ndp16->wLength) > length)) {
 			RTK_LOGS(TAG, RTK_LOG_ERROR, "Bad NDP len: wLength=%d, off=%d, rx=%d\n",
 					 ndp16->wLength, ndp_offset, length);
 			break;
@@ -896,7 +896,7 @@ static int usbd_cdc_ncm_bulk_receive(u8 *buf, u32 length)
 			}
 
 			/* Validate datagram is within the received buffer */
-			if (((u32)datagram_index + (u32)datagram_length) > length) {
+			if ((datagram_index + datagram_length) > length) {
 				RTK_LOGS(TAG, RTK_LOG_ERROR,
 						 "Datagram %d beyond RX: idx=%d+len=%d > %d\n",
 						 i, datagram_index, datagram_length, length);
@@ -946,7 +946,7 @@ static int usbd_cdc_ncm_send_notification(void)
 		/* Follow a "connected" notification with a speed-change report; a
 		 * "disconnected" notification stands alone (no trailing SPEED). */
 		next_state = ncm->connect_status ? NCM_NOTIFY_SPEED : NCM_NOTIFY_NONE;
-		usb_os_memcpy(notify_buf, &event, sizeof(event));
+		usb_os_memcpy((void *)notify_buf, (const void *)&event, sizeof(event));
 		break;
 
 	case NCM_NOTIFY_SPEED:
@@ -957,8 +957,8 @@ static int usbd_cdc_ncm_send_notification(void)
 		speed_data.ULBitRate = 0; /* Upstream bits/sec */
 		length = USBD_CDC_NCM_CONNECTION_SPEED_CHANGE_SIZE;
 		next_state = NCM_NOTIFY_NONE;
-		usb_os_memcpy(notify_buf, &event, sizeof(event));
-		usb_os_memcpy(notify_buf + sizeof(event), &speed_data, sizeof(speed_data));
+		usb_os_memcpy((void *)notify_buf, (const void *)&event, sizeof(event));
+		usb_os_memcpy((void *)(notify_buf + sizeof(event)), (const void *)&speed_data, sizeof(speed_data));
 		break;
 
 	case NCM_NOTIFY_NONE:
@@ -1001,7 +1001,7 @@ static int usbd_cdc_ncm_intr_in_send(void *data, u16 len)
 		ep_intr_in->xfer_state = 1U;
 
 		if (dev->is_ready) {
-			usb_os_memcpy((void *)ep_intr_in->xfer_buf, (void *)data, len);
+			usb_os_memcpy((void *)ep_intr_in->xfer_buf, (const void *)data, len);
 			ep_intr_in->xfer_len = len;
 			ret = usbd_ep_transmit(dev, ep_intr_in);
 			if (ret != HAL_OK) {
@@ -1085,7 +1085,11 @@ static int usbd_cdc_ncm_set_config(usb_dev_t *dev, u8 config)
 	usbd_ep_t *ep_bulk_out = &ncm->ep_bulk_out;
 	usbd_ep_t *ep_intr_in = &ncm->ep_intr_in;
 	usb_ep_info_t *info;
-	UNUSED(config);
+
+	/* Only the bConfigurationValue advertised in the config descriptor is valid */
+	if (config != 1U) {
+		return HAL_ERR_PARA;
+	}
 
 	ncm->dev = dev;
 
@@ -1288,7 +1292,7 @@ static int usbd_cdc_ncm_setup(usb_dev_t *dev, usb_setup_req_t *req)
 				ntb_params.wNdbOutAlignment = USBD_CDC_NCM_NTB_ALIGNMENT;
 				ntb_params.wNtbOutMaxDatagrams = USBD_CDC_NCM_NTB_OUT_MAX_DATAGRAMS;
 				ntb_params.wReserved1 = 0;
-				usb_os_memcpy(ep0_in->xfer_buf, &ntb_params, sizeof(ntb_params));
+				usb_os_memcpy((void *)ep0_in->xfer_buf, (const void *)&ntb_params, sizeof(ntb_params));
 				ep0_in->xfer_len = sizeof(ntb_params);
 				usbd_ep_transmit(dev, ep0_in);
 				break;
@@ -1351,7 +1355,7 @@ static int usbd_cdc_ncm_setup(usb_dev_t *dev, usb_setup_req_t *req)
 				 * arm EP0 OUT; the payload is validated/applied in
 				 * usbd_cdc_ncm_handle_ep0_data_out(). */
 				if (req->wLength > 0U) {
-					usb_os_memcpy((void *)&ncm->ctrl_req, (void *)req, sizeof(usb_setup_req_t));
+					usb_os_memcpy((void *)&ncm->ctrl_req, (const void *)req, sizeof(usb_setup_req_t));
 					ep0_out->xfer_len = req->wLength;
 					usbd_ep_receive(dev, ep0_out);
 				} else {
@@ -1378,7 +1382,7 @@ static int usbd_cdc_ncm_setup(usb_dev_t *dev, usb_setup_req_t *req)
 			default:
 				/* Forward to upper layer with data stage if needed */
 				if (req->wLength > 0) {
-					usb_os_memcpy((void *)&ncm->ctrl_req, (void *)req, sizeof(usb_setup_req_t));
+					usb_os_memcpy((void *)&ncm->ctrl_req, (const void *)req, sizeof(usb_setup_req_t));
 					ep0_out->xfer_len = req->wLength;
 					usbd_ep_receive(dev, ep0_out);
 				} else {
@@ -1715,7 +1719,7 @@ static u16 usbd_cdc_ncm_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 
 	switch (desc_type) {
 	case USB_DESC_TYPE_DEVICE:
 		len = sizeof(usbd_cdc_ncm_dev_desc);
-		usb_os_memcpy(buf, usbd_cdc_ncm_dev_desc, len);
+		usb_os_memcpy((void *)buf, (const void *)usbd_cdc_ncm_dev_desc, len);
 		break;
 
 	case USB_DESC_TYPE_CONFIGURATION:
@@ -1730,7 +1734,7 @@ static u16 usbd_cdc_ncm_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 
 			len = sizeof(usbd_cdc_ncm_fs_config_desc);
 		}
 
-		usb_os_memcpy((void *)buf, (void *)desc, len);
+		usb_os_memcpy((void *)buf, (const void *)desc, len);
 
 		if (!ncm->from_composite) {
 			buf[USB_CFG_DESC_OFFSET_ATTR] = attr;
@@ -1748,7 +1752,7 @@ static u16 usbd_cdc_ncm_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 
 #ifndef CONFIG_USB_FS
 	case USB_DESC_TYPE_DEVICE_QUALIFIER:
 		len = sizeof(usbd_cdc_ncm_device_qualifier_desc);
-		usb_os_memcpy((void *)buf, (void *)usbd_cdc_ncm_device_qualifier_desc, len);
+		usb_os_memcpy((void *)buf, (const void *)usbd_cdc_ncm_device_qualifier_desc, len);
 		break;
 
 	case USB_DESC_TYPE_OTHER_SPEED_CONFIGURATION:
@@ -1756,7 +1760,7 @@ static u16 usbd_cdc_ncm_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 
 			   usbd_cdc_ncm_fs_config_desc : usbd_cdc_ncm_hs_config_desc;
 		len = (speed == USB_SPEED_HIGH) ?
 			  sizeof(usbd_cdc_ncm_fs_config_desc) : sizeof(usbd_cdc_ncm_hs_config_desc);
-		usb_os_memcpy(buf, desc, len);
+		usb_os_memcpy((void *)buf, (const void *)desc, len);
 
 		if (!ncm->from_composite) {
 			buf[USB_CFG_DESC_OFFSET_ATTR] = attr;
@@ -1775,7 +1779,7 @@ static u16 usbd_cdc_ncm_get_descriptor(usb_dev_t *dev, usb_setup_req_t *req, u8 
 		switch (desc_idx) {
 		case USBD_IDX_LANGID_STR:
 			len = sizeof(usbd_cdc_ncm_lang_id_desc);
-			usb_os_memcpy(buf, usbd_cdc_ncm_lang_id_desc, len);
+			usb_os_memcpy((void *)buf, (const void *)usbd_cdc_ncm_lang_id_desc, len);
 			break;
 		case USBD_IDX_MFC_STR:
 			len = usbd_get_str_desc(USBD_CDC_NCM_MFG_STRING, buf);
@@ -1884,7 +1888,7 @@ static void usbd_cdc_ncm_trace_thread(void *param)
 					 "rdy %d conn %d ntf %d/%d alt %d/ep i%d o%d t%d/rx f%d pend%d idx%d/tx %s%d seq%d\n",
 					 dev->is_ready, ncm->connect_status, ncm->notify_state, ncm->notify_retry, ncm->alt_setting,
 					 ep_bulk_in->xfer_state, ep_bulk_out->xfer_state, ep_intr_in->xfer_state,
-					 ncm->rx_buf_free, (u32)ncm->rx_pending_len, ncm->rx_xfer_idx,
+					 ncm->rx_buf_free, ncm->rx_pending_len, ncm->rx_xfer_idx,
 					 "ring", (int)((ncm->tx_wd - ncm->tx_rd + USBD_CDC_NCM_TX_DEPTH) % USBD_CDC_NCM_TX_DEPTH),
 					 ncm->sequence);
 			RTK_LOGS(TAG, RTK_LOG_INFO,
@@ -1984,7 +1988,7 @@ static int usbd_cdc_ncm_private_init(const usbd_cdc_ncm_cb_t *cb, const usbd_cdc
 				RTK_LOGS(TAG, RTK_LOG_ERROR, "Alloc TX pp slot %d fail\n", i);
 				/* Roll back any earlier slots before bailing out. */
 				while (i-- > 0U) {
-					usb_os_mfree(ncm->tx_slot[i].buf);
+					usb_os_mfree((void *)ncm->tx_slot[i].buf);
 					ncm->tx_slot[i].buf = NULL;
 				}
 				return HAL_ERR_MEM;
@@ -2123,7 +2127,7 @@ static int usbd_cdc_ncm_private_init(const usbd_cdc_ncm_cb_t *cb, const usbd_cdc
 	return HAL_OK;
 
 cleanup_intr_in:
-	usb_os_mfree(ep_intr_in->xfer_buf);
+	usb_os_mfree((void *)ep_intr_in->xfer_buf);
 	ep_intr_in->xfer_buf = NULL;
 
 cleanup_rx_thread:
@@ -2150,21 +2154,19 @@ cleanup_tx_raw_rb:
 #endif
 
 cleanup_rx_buf1:
-	usb_os_mfree(ncm->rx_buf[1]);
+	usb_os_mfree((void *)ncm->rx_buf[1]);
 	ncm->rx_buf[1] = NULL;
 
 cleanup_rx_buf0:
-	usb_os_mfree(ncm->rx_buf[0]);
+	usb_os_mfree((void *)ncm->rx_buf[0]);
 	ncm->rx_buf[0] = NULL;
 	ep_bulk_out->xfer_buf = NULL;
 
 exit: {
 		u8 i;
 		for (i = 0U; i < USBD_CDC_NCM_TX_DEPTH; i++) {
-			if (ncm->tx_slot[i].buf != NULL) {
-				usb_os_mfree(ncm->tx_slot[i].buf);
-				ncm->tx_slot[i].buf = NULL;
-			}
+			usb_os_mfree((void *)ncm->tx_slot[i].buf);
+			ncm->tx_slot[i].buf = NULL;
 		}
 	}
 
@@ -2247,10 +2249,8 @@ int usbd_cdc_ncm_deinit(void)
 		for (i = 0U; i < USBD_CDC_NCM_TX_DEPTH; i++) {
 			ncm->tx_slot[i].frame_count = 0;
 			ncm->tx_slot[i].data_offset = 0;
-			if (ncm->tx_slot[i].buf != NULL) {
-				usb_os_mfree(ncm->tx_slot[i].buf);
-				ncm->tx_slot[i].buf = NULL;
-			}
+			usb_os_mfree((void *)ncm->tx_slot[i].buf);
+			ncm->tx_slot[i].buf = NULL;
 		}
 		ncm->tx_wd = 0;
 		ncm->tx_rd = 0;
@@ -2297,17 +2297,13 @@ int usbd_cdc_ncm_deinit(void)
 	}
 
 	/* Free buffers */
-	if (ep_intr_in->xfer_buf != NULL) {
-		usb_os_mfree(ep_intr_in->xfer_buf);
-		ep_intr_in->xfer_buf = NULL;
-	}
+	usb_os_mfree((void *)ep_intr_in->xfer_buf);
+	ep_intr_in->xfer_buf = NULL;
 
 	/* Free RX ping-pong buffers. */
 	for (u8 i = 0; i < USBD_CDC_NCM_RX_BUF_NUM; i++) {
-		if (ncm->rx_buf[i] != NULL) {
-			usb_os_mfree(ncm->rx_buf[i]);
-			ncm->rx_buf[i] = NULL;
-		}
+		usb_os_mfree((void *)ncm->rx_buf[i]);
+		ncm->rx_buf[i] = NULL;
 	}
 	ep_bulk_out->xfer_buf = NULL;
 
